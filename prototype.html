@@ -1,0 +1,2137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <title>AI Risk Agent</title>
+  <style>
+    /* === DESIGN SYSTEM (Tier 1: light theme, tabular numerals, colour discipline, spacing) === */
+    :root {
+      /* Surfaces — layered light canvas */
+      --bg-canvas: #FFFFFF;
+      --bg-panel: #FAFBFC;
+      --bg-panel-hover: #F1F3F5;
+      --bg-elevated: #FFFFFF;
+
+      /* Borders */
+      --border-subtle: #EAEDF0;
+      --border-default: #D6D9DD;
+      --border-strong: #ABB0B8;
+
+      /* Text — calibrated for WCAG AA on light background (#FFFFFF) */
+      --text-primary: rgba(0, 0, 0, 0.92);   /* ~16:1 — body text */
+      --text-secondary: rgba(0, 0, 0, 0.65); /* ~8:1 — labels/captions */
+      --text-muted: rgba(0, 0, 0, 0.50);      /* ~5:1 — meta/timestamps */
+      --text-faint: rgba(0, 0, 0, 0.40);      /* ~4:1 — disabled/decoration */
+
+      /* Data signal colours — reserved for directional/severity only */
+      --signal-up: #26A69A;
+      --signal-down: #EF5350;
+      --signal-warn: #FFB74D;
+
+      /* Tinted backgrounds (subtle) */
+      --tint-up: rgba(38, 166, 154, 0.10);
+      --tint-down: rgba(239, 83, 80, 0.10);
+      --tint-warn: rgba(255, 183, 77, 0.10);
+
+      /* Brand accent (use sparingly) */
+      --accent: #2962FF;
+      --accent-hover: #1E53E5;
+
+      /* Spacing — strict 4px scale */
+      --s-1: 4px;
+      --s-2: 8px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 20px;
+      --s-6: 24px;
+      --s-8: 32px;
+      --s-10: 40px;
+
+      /* Typography */
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+      --num: tabular-nums;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg-canvas); color: var(--text-primary); }
+    body { font-family: var(--font-sans); max-width: 1400px; margin: var(--s-10) auto; padding: 0 var(--s-5); font-size: 14px; line-height: 1.5; }
+
+    /* Tabular numerals globally on data surfaces */
+    table, .vix-bar, .exposure-bar, .summary-card, .audit-section pre, .score-table, input[type="number"] { font-variant-numeric: tabular-nums; }
+
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: var(--s-6); letter-spacing: -0.01em; }
+    label { display: block; font-weight: 500; margin-bottom: var(--s-1); font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    input, button { font-family: inherit; }
+    input[type="file"], input[type="number"], input[type="text"] {
+      display: block; width: 100%;
+      padding: var(--s-2) var(--s-3);
+      background: var(--bg-panel);
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      font-size: 13px; color: var(--text-primary);
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    .field { margin-bottom: var(--s-4); }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; margin-top: var(--s-4); border: 1px solid var(--border-default); border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: var(--s-2) var(--s-3); text-align: left; border-bottom: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); vertical-align: top; }
+    th { background: var(--bg-panel); position: sticky; top: 0; z-index: 1; font-size: 11px; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    tbody tr { background: var(--bg-canvas); transition: background 100ms ease; }
+    tbody tr:hover { background: var(--bg-panel); }
+    td:last-child, th:last-child { border-right: none; }
+    tr:last-child td { border-bottom: none; }
+
+    #status { margin-top: var(--s-3); color: var(--text-muted); font-size: 13px; }
+    .loading { color: var(--text-muted); font-style: italic; }
+    td a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 11px; }
+    td a:hover { color: var(--accent-hover); text-decoration: underline; }
+    td a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+
+    .audit-btn { cursor: pointer; margin-left: var(--s-1); font-size: 13px; opacity: 0.85; display: inline; border: none; background: none; padding: 0; color: var(--text-primary); filter: grayscale(1) brightness(2); }
+    .audit-btn:hover { opacity: 1; filter: grayscale(0) brightness(1); }
+    .audit-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: var(--bg-panel); border: 1px solid var(--border-default); border-radius: 4px; max-width: 840px; width: 90%; max-height: 85vh; overflow-y: auto; padding: var(--s-6); position: relative; color: var(--text-primary); }
+    .modal h2 { margin-bottom: var(--s-4); font-size: 15px; font-weight: 600; }
+    .modal-close { position: absolute; top: var(--s-3); right: var(--s-4); font-size: 20px; cursor: pointer; border: none; background: none; color: var(--text-secondary); }
+    .modal-close:hover { color: var(--text-primary); }
+    .audit-section { margin-bottom: var(--s-4); }
+    .audit-section h3 { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--s-2); padding-bottom: var(--s-1); border-bottom: 1px solid var(--border-subtle); }
+    .audit-section p { font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+    .audit-section a { color: var(--accent); }
+    .audit-section pre { background: var(--bg-canvas); border: 1px solid var(--border-subtle); padding: var(--s-3); border-radius: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; }
+    .audit-meta { font-size: 11px; color: var(--text-muted); margin-top: var(--s-3); padding-top: var(--s-2); border-top: 1px solid var(--border-subtle); }
+
+    /* Metric bars (VIX + Exposure) */
+    .vix-bar, .exposure-bar { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-3) var(--s-4); border: 1px solid var(--border-default); background: var(--bg-panel); border-radius: 4px; margin-bottom: var(--s-3); font-size: 13px; }
+    .vix-value, .exposure-value { font-size: 22px; font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); letter-spacing: -0.01em; }
+    .vix-label, .exposure-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+    .exposure-detail { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
+    .vix-level { font-weight: 600; padding: 2px var(--s-2); border-radius: 2px; font-size: 10px; letter-spacing: 0.06em; }
+    /* VIX badges — neutral grey across all levels (context, not directional) */
+    .vix-low, .vix-moderate, .vix-high, .vix-extreme {
+      background: var(--bg-panel-hover);
+      color: var(--text-secondary);
+    }
+
+    /* Score table inside audit */
+    .score-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: var(--s-2) 0; }
+    .score-table th, .score-table td { padding: var(--s-1) var(--s-2); border-bottom: 1px solid var(--border-subtle); text-align: left; color: var(--text-primary); }
+    .score-table th { background: var(--bg-canvas); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.04em; }
+    .pts-pos { color: var(--signal-up); font-weight: 600; }
+    .pts-neg { color: var(--signal-down); font-weight: 600; }
+    .pts-zero { color: var(--text-muted); }
+    .verdict-agree { color: var(--signal-up); font-weight: 600; }
+    .verdict-adjust { color: var(--signal-warn); font-weight: 600; }
+
+    /* Multi-select checkboxes */
+    .checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1) var(--s-4); margin-top: var(--s-1); }
+    .checkbox-grid label { display: flex; align-items: center; gap: var(--s-1); font-size: 12px; font-weight: 400; color: var(--text-primary); cursor: pointer; padding: var(--s-1) 0; text-transform: none; letter-spacing: 0; }
+    .checkbox-grid input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+    .setup-screen .checkbox-grid label { font-size: 13px; }
+    .field-label { display: block; font-weight: 500; margin-bottom: var(--s-1); font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+
+    /* Spinner */
+    .spinner-wrap { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-5) 0; color: var(--text-secondary); }
+    .spinner { width: 18px; height: 18px; border: 2px solid var(--border-default); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Portfolio summary card */
+    .summary-card { margin-bottom: var(--s-6); }
+    .summary-card h2 { font-size: 14px; font-weight: 600; margin-bottom: var(--s-3); padding-bottom: var(--s-2); border-bottom: 1px solid var(--border-default); color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); margin-bottom: var(--s-3); }
+    .summary-panel { border: 1px solid var(--border-default); border-radius: 4px; padding: var(--s-4); background: var(--bg-panel); }
+    .summary-panel h3 { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--s-2); font-weight: 500; }
+    .summary-panel p { font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+    .summary-panel.exposure, .summary-panel.sector { border-left: 1px solid var(--border-default); }
+    .risk-item { display: flex; align-items: flex-start; gap: var(--s-2); padding: var(--s-2) 0; border-bottom: 1px solid var(--border-subtle); }
+    .risk-item:last-child { border-bottom: none; }
+    .risk-num { width: 18px; height: 18px; border-radius: 50%; background: var(--tint-down); color: var(--signal-down); font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; font-family: var(--font-mono); }
+    .risk-text { font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+    .actions-panel { border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-panel); padding: var(--s-4); }
+    .actions-panel h3 { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: var(--s-3); font-weight: 500; }
+    .action-item { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); margin-bottom: var(--s-1); background: var(--bg-elevated); border-radius: 2px; border-left: 2px solid; font-size: 13px; line-height: 1.5; color: var(--text-primary); }
+    .action-item:last-child { margin-bottom: 0; }
+    .action-exit { border-left-color: var(--signal-down); }
+    .action-reduce { border-left-color: var(--signal-warn); }
+    .action-hold { border-left-color: var(--signal-up); }
+    .action-icon { font-size: 12px; opacity: 0.7; }
+
+    /* Setup screen */
+    .setup-screen { max-width: 480px; margin: 80px auto; padding: var(--s-8); border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-panel); }
+    .setup-screen h1 { margin-bottom: var(--s-2); font-size: 18px; }
+    .setup-screen p { color: var(--text-secondary); font-size: 13px; margin-bottom: var(--s-5); text-transform: none; letter-spacing: 0; }
+    .setup-screen .field { margin-bottom: var(--s-3); }
+    .setup-screen input[type="number"], .setup-screen input[type="file"], .setup-screen input[type="text"] { padding: var(--s-2) var(--s-3); font-size: 13px; }
+    .setup-screen button { width: 100%; padding: var(--s-3); background: var(--accent); color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: var(--s-2); letter-spacing: 0.02em; }
+    .setup-screen button:hover { background: var(--accent-hover); }
+
+    /* Settings bar (collapsed) */
+    .settings-bar { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 4px; margin-bottom: var(--s-3); font-size: 12px; border: 1px solid var(--border-default); background: var(--bg-panel); color: var(--text-secondary); }
+    .settings-bar .settings-summary { flex: 1; font-family: var(--font-mono); }
+    .settings-bar button { background: transparent; border: 1px solid var(--border-default); border-radius: 2px; padding: var(--s-1) var(--s-3); font-size: 11px; cursor: pointer; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .settings-bar button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+    .settings-edit { display: none; padding: var(--s-3); border: 1px solid var(--border-default); border-radius: 4px; margin-bottom: var(--s-3); background: var(--bg-panel); }
+    .settings-edit .field-row { display: flex; gap: var(--s-3); margin-bottom: var(--s-3); }
+    .settings-edit .field-row > div { flex: 1; }
+    .settings-edit label { display: block; font-size: 10px; font-weight: 500; margin-bottom: var(--s-1); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .settings-edit input { padding: var(--s-2) var(--s-3); font-size: 13px; }
+    .settings-edit button { padding: var(--s-2) var(--s-4); background: var(--accent); color: #fff; border: none; border-radius: 2px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .settings-edit button:hover { background: var(--accent-hover); }
+
+    /* Recommendation filter bar */
+    .filter-bar { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-4) 0 var(--s-2); }
+    .filter-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; margin-right: var(--s-2); }
+    .filter-pill {
+      display: inline-flex; align-items: center; gap: var(--s-2);
+      padding: var(--s-1) var(--s-3);
+      background: transparent;
+      border: 1px solid var(--border-default);
+      border-radius: 2px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 100ms ease;
+    }
+    .filter-pill:hover { background: var(--bg-elevated); color: var(--text-primary); }
+    .filter-pill .filter-count { font-size: 10px; font-weight: 500; opacity: 0.7; font-family: var(--font-mono); }
+    .filter-pill.active { color: var(--text-primary); }
+    .filter-pill.active.all { background: var(--bg-elevated); border-color: var(--border-strong); }
+    .filter-pill.active.exit { background: rgba(239, 83, 80, 0.16); border-color: var(--signal-down); color: var(--signal-down); }
+    .filter-pill.active.reduce { background: rgba(255, 183, 77, 0.16); border-color: var(--signal-warn); color: var(--signal-warn); }
+    .filter-pill.active.hold { background: rgba(38, 166, 154, 0.16); border-color: var(--signal-up); color: var(--signal-up); }
+
+    /* === RESTRUCTURED LAYOUT === */
+
+    /* Heading hierarchy */
+    h2.section-title {
+      font-size: 18px; font-weight: 600; color: var(--text-primary);
+      letter-spacing: -0.01em;
+      margin: var(--s-8) 0 var(--s-4);
+      padding-bottom: var(--s-3);
+      border-bottom: 1px solid var(--border-default);
+    }
+    h2.section-title:first-child { margin-top: 0; }
+    h3.subsection-title {
+      font-size: 10px; font-weight: 500; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: var(--s-2);
+    }
+
+    /* Section header row — h2 on left, optional action on right */
+    .section-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: var(--s-3);
+      margin: var(--s-8) 0 var(--s-4);
+      padding-bottom: var(--s-3);
+      border-bottom: 1px solid var(--border-default);
+    }
+    .summary-section .section-header { margin-top: 0; }
+    .section-header > h2.section-title {
+      margin: 0; padding: 0; border: none;
+    }
+
+    /* Jump-to-positions anchor link */
+    .jump-link {
+      display: inline-flex; align-items: center; gap: var(--s-2);
+      padding: var(--s-1) var(--s-3);
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      color: var(--accent);
+      font-size: 12px; font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: background 100ms ease;
+      flex-shrink: 0;
+    }
+    .jump-link:hover { background: rgba(41, 98, 255, 0.12); }
+
+    /* Filter bar above the positions table */
+    .filter-bar-positions {
+      display: flex; align-items: center; gap: var(--s-2);
+      margin-bottom: var(--s-3);
+    }
+
+    /* Tab bar */
+    .tabs {
+      display: flex; gap: 0;
+      border-bottom: 1px solid var(--border-default);
+      margin-bottom: var(--s-5);
+    }
+    .tab {
+      padding: var(--s-3) var(--s-5);
+      background: transparent; border: none;
+      border-bottom: 2px solid transparent;
+      font-family: inherit; font-size: 14px; font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      letter-spacing: -0.01em;
+      margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--text-primary); }
+    .tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Hero verdict counts (Overview tab top) */
+    .verdict-hero {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--s-3);
+      margin-bottom: var(--s-5);
+    }
+    .verdict-hero-card {
+      padding: var(--s-4) var(--s-5);
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      background: var(--bg-canvas);
+      display: flex; flex-direction: column; gap: var(--s-1);
+    }
+    .verdict-hero-card.exit { border-left: 3px solid var(--signal-down); }
+    .verdict-hero-card.reduce { border-left: 3px solid var(--signal-warn); }
+    .verdict-hero-card.hold { border-left: 3px solid var(--signal-up); }
+    .verdict-hero-count {
+      font-size: 36px; font-weight: 700; font-family: var(--font-mono);
+      letter-spacing: -0.02em; line-height: 1;
+      color: var(--text-primary);
+    }
+    .verdict-hero-card.exit .verdict-hero-count { color: var(--signal-down); }
+    .verdict-hero-card.reduce .verdict-hero-count { color: #C68A2E; }
+    .verdict-hero-card.hold .verdict-hero-count { color: var(--signal-up); }
+    .verdict-hero-label {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-secondary);
+    }
+
+    /* Single action list (replaces 2x2 risks/actions grid) */
+    .action-list {
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      background: var(--bg-panel);
+      padding: var(--s-4);
+    }
+    .action-list h3.subsection-title { margin-bottom: var(--s-3); }
+    .action-list .action-item {
+      padding: var(--s-3);
+      margin-bottom: var(--s-2);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--border-default);
+      border-radius: 2px;
+      font-size: 13px; line-height: 1.5;
+      display: flex; align-items: flex-start; gap: var(--s-2);
+    }
+    .action-list .action-item:last-child { margin-bottom: 0; }
+    .action-list .action-exit { border-left-color: var(--signal-down); }
+    .action-list .action-reduce { border-left-color: var(--signal-warn); }
+    .action-list .action-hold { border-left-color: var(--signal-up); }
+    .action-list .action-icon { flex-shrink: 0; margin-top: 1px; }
+    .action-list .action-exit .action-icon { color: var(--signal-down); }
+    .action-list .action-reduce .action-icon { color: var(--signal-warn); }
+    .action-list .action-hold .action-icon { color: var(--signal-up); }
+
+    /* Compact sector breakdown panel for Positions tab */
+    .sector-breakdown-compact {
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      background: var(--bg-panel);
+      padding: var(--s-3) var(--s-4);
+      margin-bottom: var(--s-4);
+    }
+    .sector-breakdown-compact h3 { margin-bottom: var(--s-2); }
+    .sector-breakdown-compact .sector-rows {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--s-3) var(--s-5);
+    }
+
+    /* Column groups in positions table */
+    .table-wrap thead .group-row th {
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      padding: var(--s-1) var(--s-3);
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-panel-hover);
+      text-align: left;
+    }
+    .table-wrap thead .group-row .group-verdict { background: rgba(41, 98, 255, 0.05); color: var(--text-primary); }
+    .table-wrap thead .group-row .group-position { background: var(--bg-panel-hover); }
+    .table-wrap thead .group-row .group-risk { background: var(--bg-panel-hover); }
+    .table-wrap thead .group-row .group-ai { background: var(--bg-panel-hover); }
+
+    /* Show-all-columns toggle */
+    .table-controls {
+      display: flex; align-items: center; gap: var(--s-2);
+      margin-bottom: var(--s-2);
+      font-size: 12px; color: var(--text-secondary);
+    }
+    .table-controls label { display: inline-flex; align-items: center; gap: var(--s-1); cursor: pointer; }
+    .table-controls input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+    .table-wrap.hide-extras .col-hardstop { display: none; }
+
+    /* Position-detail row info button (replaces per-cell audit buttons) */
+    .row-info-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-size: 13px; font-weight: 700;
+      font-family: var(--font-sans);
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 100ms ease;
+    }
+    .row-info-btn:hover { background: var(--accent-hover); }
+    .row-info-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Confidence pill */
+    .confidence-pill {
+      display: inline-block;
+      padding: 2px var(--s-2);
+      border-radius: 2px;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-top: var(--s-1);
+    }
+    .confidence-pill.high { background: rgba(38, 166, 154, 0.16); color: var(--signal-up); }
+    .confidence-pill.medium { background: rgba(0, 0, 0, 0.06); color: var(--text-secondary); }
+    .confidence-pill.low { background: rgba(239, 83, 80, 0.10); color: var(--signal-down); }
+
+    /* Footnote-style article links */
+    td a.footnote-link {
+      color: var(--text-muted); font-weight: 400; font-size: 10px;
+      text-decoration: none;
+      vertical-align: super;
+      padding: 0 1px;
+    }
+    td a.footnote-link:hover { color: var(--accent); }
+
+    /* Replace File button — promoted from tertiary */
+    .report-header button.rh-replace {
+      background: var(--accent); color: #fff; border-color: var(--accent);
+    }
+    .report-header button.rh-replace:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+
+    /* Feedback (thumbs up/down + optional comment) */
+    .feedback-bar {
+      display: inline-flex; align-items: center; gap: var(--s-1);
+      margin-top: var(--s-2);
+      font-size: 11px; color: var(--text-muted);
+    }
+    .feedback-bar.portfolio {
+      margin-top: var(--s-3);
+      padding-top: var(--s-3);
+      border-top: 1px solid var(--border-subtle);
+      width: 100%; gap: var(--s-2);
+      font-size: 12px;
+    }
+    .feedback-bar .feedback-prompt {
+      color: var(--text-secondary); font-weight: 500;
+      flex: 1;
+    }
+    .thumb-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px;
+      border-radius: 3px;
+      border: 1px solid var(--border-default);
+      background: var(--bg-canvas);
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 100ms ease;
+      padding: 0; line-height: 1;
+    }
+    .thumb-btn:hover { background: var(--bg-panel-hover); }
+    .thumb-btn.up.active { background: rgba(38, 166, 154, 0.16); border-color: var(--signal-up); color: var(--signal-up); }
+    .thumb-btn.down.active { background: rgba(239, 83, 80, 0.16); border-color: var(--signal-down); color: var(--signal-down); }
+
+    .feedback-comment {
+      display: none;
+      margin-top: var(--s-2);
+      width: 100%;
+    }
+    .feedback-comment textarea {
+      width: 100%; min-height: 48px;
+      padding: var(--s-2) var(--s-3);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-default);
+      border-radius: 3px;
+      font-family: inherit; font-size: 12px; color: var(--text-primary);
+      resize: vertical;
+    }
+    .feedback-comment textarea:focus { outline: none; border-color: var(--accent); }
+    .feedback-comment .submit-feedback {
+      margin-top: var(--s-1);
+      padding: var(--s-1) var(--s-3);
+      background: var(--accent); color: #fff; border: none; border-radius: 3px;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      font-family: inherit;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .feedback-comment .submit-feedback:hover { background: var(--accent-hover); }
+    .feedback-thanks {
+      display: none;
+      margin-top: var(--s-2);
+      font-size: 11px; color: var(--signal-up); font-weight: 500;
+    }
+
+    /* Feedback export link below the table */
+    .feedback-export {
+      text-align: right;
+      margin-top: var(--s-3);
+      font-size: 11px;
+    }
+    .feedback-export a {
+      color: var(--text-muted); text-decoration: none;
+    }
+    .feedback-export a:hover { color: var(--accent); text-decoration: underline; }
+
+    /* Report header — merged settings + file metadata + actions */
+    .report-header {
+      display: flex; align-items: center; gap: var(--s-3);
+      padding: var(--s-3) var(--s-4);
+      border: 1px solid var(--border-default);
+      background: var(--bg-panel);
+      border-radius: 4px;
+      margin-bottom: var(--s-4);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .report-header .rh-file {
+      display: flex; align-items: center; gap: var(--s-2);
+      color: var(--text-primary); font-weight: 500;
+    }
+    .report-header .rh-file-icon { opacity: 0.6; font-size: 14px; }
+    .report-header .rh-divider {
+      width: 1px; height: 16px; background: var(--border-default);
+      margin: 0 var(--s-2);
+    }
+    .report-header .rh-meta {
+      flex: 1; font-family: var(--font-mono); color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .report-header .rh-actions { display: flex; gap: var(--s-1); }
+    .report-header button {
+      background: transparent; border: 1px solid var(--border-default);
+      border-radius: 2px; padding: var(--s-1) var(--s-3);
+      font-size: 10px; font-weight: 600; cursor: pointer;
+      color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.06em;
+      font-family: inherit;
+    }
+    .report-header button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+
+    /* Summary section — single cohesive container for everything pre-table */
+    .summary-section {
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      background: var(--bg-panel);
+      padding: var(--s-5) var(--s-5) var(--s-4);
+      margin-bottom: var(--s-6);
+    }
+    .summary-section > h2.section-title { margin-top: 0; }
+
+    /* Condensed metrics strip — replaces VIX bar + Exposure bar */
+    .metrics-strip {
+      display: flex; align-items: center; flex-wrap: wrap;
+      gap: 0;
+      padding: var(--s-3) var(--s-4);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      margin-bottom: var(--s-4);
+      font-size: 12px;
+    }
+    .metrics-strip .metric {
+      display: flex; align-items: baseline; gap: var(--s-2);
+      padding: 0 var(--s-4);
+      border-right: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+    .metrics-strip .metric:first-child { padding-left: 0; }
+    .metrics-strip .metric:last-of-type { border-right: none; }
+    .metrics-strip .m-label {
+      font-size: 10px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
+    }
+    .metrics-strip .m-value {
+      font-size: 14px; font-weight: 600; color: var(--text-primary);
+      font-family: var(--font-mono);
+    }
+    .metrics-strip .m-sub {
+      font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
+    }
+    .metrics-strip .m-badge {
+      font-size: 9px; font-weight: 600; padding: 1px var(--s-1);
+      border-radius: 2px; letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .metrics-strip .audit-btn { margin-left: var(--s-1); font-size: 12px; }
+
+    /* Verdict card — hero of the summary */
+    .verdict-card {
+      padding: var(--s-4);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      margin-bottom: var(--s-4);
+    }
+    .verdict-pills {
+      display: flex; gap: var(--s-2);
+      margin-bottom: var(--s-3);
+    }
+    .filter-pill-lg {
+      display: inline-flex; align-items: baseline; gap: var(--s-2);
+      padding: var(--s-2) var(--s-4);
+      background: transparent;
+      border: 1px solid var(--border-default);
+      border-radius: 3px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 100ms ease;
+    }
+    .filter-pill-lg:hover { background: var(--bg-panel-hover); color: var(--text-primary); }
+    .filter-pill-lg .pill-count {
+      font-size: 16px; font-weight: 700; letter-spacing: -0.01em;
+      font-family: var(--font-mono);
+    }
+    .filter-pill-lg.active { color: var(--text-primary); }
+    .filter-pill-lg.active.all { background: var(--bg-panel-hover); border-color: var(--border-strong); }
+    .filter-pill-lg.active.exit { background: rgba(239, 83, 80, 0.18); border-color: var(--signal-down); color: var(--signal-down); }
+    .filter-pill-lg.active.reduce { background: rgba(255, 183, 77, 0.18); border-color: var(--signal-warn); color: var(--signal-warn); }
+    .filter-pill-lg.active.hold { background: rgba(38, 166, 154, 0.18); border-color: var(--signal-up); color: var(--signal-up); }
+
+    .verdict-lines { display: flex; flex-direction: column; gap: var(--s-1); }
+    .verdict-line {
+      display: flex; align-items: flex-start; gap: var(--s-2);
+      font-size: 13px; line-height: 1.5; color: var(--text-primary);
+    }
+    .verdict-line .vl-icon {
+      flex-shrink: 0; width: 16px; text-align: center;
+      font-size: 12px; line-height: 1.6;
+    }
+    .verdict-line .vl-label {
+      font-size: 10px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      flex-shrink: 0; min-width: 88px; line-height: 1.6;
+    }
+    .verdict-line.risk .vl-icon { color: var(--signal-down); }
+    .verdict-line.action .vl-icon { color: var(--accent); }
+    .verdict-line.sector .vl-icon { color: var(--signal-warn); }
+
+    /* 2x2 grid for analysis sub-panels */
+    .summary-grid-2x2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--s-3);
+    }
+    .summary-grid-2x2 .summary-panel { margin: 0; }
+    .summary-grid-2x2 .summary-panel.exposure,
+    .summary-grid-2x2 .summary-panel.sector { border-left: 1px solid var(--border-default); }
+
+    /* Compact sector breakdown rows */
+    .sector-row {
+      display: grid;
+      grid-template-columns: 1fr 48px;
+      align-items: center;
+      gap: var(--s-2);
+      margin-bottom: var(--s-1);
+      font-size: 12px;
+    }
+    .sector-row .sr-name { color: var(--text-primary); }
+    .sector-row .sr-pct { font-family: var(--font-mono); font-weight: 600; text-align: right; color: var(--text-primary); }
+    .sector-row .sr-bar-wrap {
+      grid-column: 1 / -1;
+      background: var(--border-subtle); height: 4px; border-radius: 2px; overflow: hidden;
+      margin-bottom: var(--s-2);
+    }
+    .sector-row .sr-bar { height: 100%; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <!-- SETUP SCREEN -->
+  <div class="setup-screen" id="setupScreen" style="display:none;">
+    <h1>AI Risk Agent</h1>
+    <p>Configure your portfolio parameters to get started.</p>
+    <div class="field">
+      <label for="setupAum">AUM ($M)</label>
+      <input type="number" id="setupAum" value="25" step="1" min="1" placeholder="e.g. 25">
+    </div>
+    <div class="field">
+      <label for="setupMin">Net Exposure Min %</label>
+      <input type="number" id="setupMin" value="20" step="1" placeholder="e.g. 20">
+    </div>
+    <div class="field">
+      <label for="setupMax">Net Exposure Max %</label>
+      <input type="number" id="setupMax" value="60" step="1" placeholder="e.g. 60">
+    </div>
+    <div class="field">
+      <span class="field-label">Investable Sectors</span>
+      <div class="checkbox-grid" id="setupSectors">
+        <label><input type="checkbox" value="Information Technology"> Information Technology</label>
+        <label><input type="checkbox" value="Healthcare"> Healthcare</label>
+        <label><input type="checkbox" value="Financials"> Financials</label>
+        <label><input type="checkbox" value="Consumer Discretionary"> Consumer Discretionary</label>
+        <label><input type="checkbox" value="Consumer Staples"> Consumer Staples</label>
+        <label><input type="checkbox" value="Communication Services"> Communication Services</label>
+        <label><input type="checkbox" value="Industrials"> Industrials</label>
+        <label><input type="checkbox" value="Energy"> Energy</label>
+        <label><input type="checkbox" value="Materials"> Materials</label>
+        <label><input type="checkbox" value="Real Estate"> Real Estate</label>
+        <label><input type="checkbox" value="Utilities"> Utilities</label>
+      </div>
+    </div>
+    <div class="field">
+      <span class="field-label">Investable Geographies</span>
+      <div class="checkbox-grid" id="setupGeo">
+        <label><input type="checkbox" value="North America"> North America</label>
+        <label><input type="checkbox" value="Europe"> Europe</label>
+        <label><input type="checkbox" value="Asia Pacific"> Asia Pacific</label>
+        <label><input type="checkbox" value="Emerging Asia"> Emerging Asia</label>
+        <label><input type="checkbox" value="Latin America"> Latin America</label>
+        <label><input type="checkbox" value="Middle East & Africa"> Middle East & Africa</label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="setupCsv">Upload Positions CSV</label>
+      <input type="file" id="setupCsv" accept=".csv,.xlsx,.xls" style="display:block; width:100%; padding:10px 14px; border:1px solid #ccc; border-radius:6px; font-size:15px;">
+    </div>
+    <button onclick="completeSetup()">Analyse Portfolio</button>
+  </div>
+
+  <!-- MAIN DASHBOARD -->
+  <div id="dashboard" style="display:none;">
+    <h1>AI Risk Agent</h1>
+
+    <!-- Merged report header — file metadata + settings summary + actions -->
+    <div class="report-header" id="reportHeader">
+      <div class="rh-file" id="rhFile" style="display:none;">
+        <span class="rh-file-icon">&#128196;</span>
+        <span id="rhFileName"></span>
+      </div>
+      <div class="rh-divider" id="rhDivider1" style="display:none;"></div>
+      <div class="rh-meta" id="rhMeta"></div>
+      <div class="rh-actions">
+        <button id="rhReplace" class="rh-replace" onclick="document.getElementById('csvFile').click()" style="display:none;">Replace File</button>
+        <button onclick="toggleSettingsEdit()">Edit</button>
+      </div>
+    </div>
+
+    <!-- Hidden file input (triggered by Replace File button or initial upload) -->
+    <input type="file" id="csvFile" accept=".csv,.xlsx,.xls" style="display:none;">
+
+    <!-- Initial upload prompt — shown only before first analysis -->
+    <div class="field" id="initialUpload" style="margin-bottom:20px;">
+      <label for="csvFile">Upload Portfolio CSV</label>
+      <button onclick="document.getElementById('csvFile').click()" style="display:block; width:100%; padding:var(--s-3); background:var(--accent); color:#fff; border:none; border-radius:4px; font-size:13px; font-weight:600; cursor:pointer; letter-spacing:0.02em;">Choose file…</button>
+    </div>
+
+    <!-- Expanded settings edit panel -->
+    <div class="settings-edit" id="settingsEdit">
+      <div class="field-row">
+        <div><label for="aumInput">AUM ($M)</label><input type="number" id="aumInput" value="25" step="1" min="1"></div>
+        <div><label for="targetMin">Net Exp. Min %</label><input type="number" id="targetMin" value="20" step="1"></div>
+        <div><label for="targetMax">Net Exp. Max %</label><input type="number" id="targetMax" value="60" step="1"></div>
+      </div>
+      <div class="field-row">
+        <div style="flex:1;">
+          <span class="field-label">Investable Sectors</span>
+          <div class="checkbox-grid" id="dashSectors">
+            <label><input type="checkbox" value="Information Technology"> Information Technology</label>
+            <label><input type="checkbox" value="Healthcare"> Healthcare</label>
+            <label><input type="checkbox" value="Financials"> Financials</label>
+            <label><input type="checkbox" value="Consumer Discretionary"> Consumer Discretionary</label>
+            <label><input type="checkbox" value="Consumer Staples"> Consumer Staples</label>
+            <label><input type="checkbox" value="Communication Services"> Communication Services</label>
+            <label><input type="checkbox" value="Industrials"> Industrials</label>
+            <label><input type="checkbox" value="Energy"> Energy</label>
+            <label><input type="checkbox" value="Materials"> Materials</label>
+            <label><input type="checkbox" value="Real Estate"> Real Estate</label>
+            <label><input type="checkbox" value="Utilities"> Utilities</label>
+          </div>
+        </div>
+        <div style="flex:1;">
+          <span class="field-label">Investable Geographies</span>
+          <div class="checkbox-grid" id="dashGeo">
+            <label><input type="checkbox" value="North America"> North America</label>
+            <label><input type="checkbox" value="Europe"> Europe</label>
+            <label><input type="checkbox" value="Asia Pacific"> Asia Pacific</label>
+            <label><input type="checkbox" value="Emerging Asia"> Emerging Asia</label>
+            <label><input type="checkbox" value="Latin America"> Latin America</label>
+            <label><input type="checkbox" value="Middle East & Africa"> Middle East & Africa</label>
+          </div>
+        </div>
+      </div>
+      <button onclick="saveAndCollapseSettings()">Save</button>
+    </div>
+
+    <div id="status"></div>
+
+    <!-- Report section — hidden until analysis complete -->
+    <div id="reportSection" style="display:none;">
+      <section class="summary-section">
+        <div class="section-header">
+          <h2 class="section-title">Summary</h2>
+          <button class="jump-link" onclick="document.getElementById('positionsSection').scrollIntoView({behavior:'smooth', block:'start'})">Jump to positions table &darr;</button>
+        </div>
+
+        <!-- Hero verdict counts (display-only) -->
+        <div class="verdict-hero" id="verdictHero"></div>
+
+        <!-- Condensed metrics strip -->
+        <div class="metrics-strip" id="metricsStrip"></div>
+
+        <!-- Single action list -->
+        <div id="summaryCard"></div>
+      </section>
+
+      <h2 class="section-title" id="positionsSection">Positions</h2>
+
+      <!-- Sector breakdown — compact, near table -->
+      <div class="sector-breakdown-compact" id="sectorBreakdownCompact"></div>
+
+      <!-- Table controls -->
+      <div class="table-controls">
+        <label><input type="checkbox" id="showAllCols"> Show all columns</label>
+      </div>
+
+      <!-- Filter pills with counts (interactive) -->
+      <div class="filter-bar-positions" id="filterBarPositions"></div>
+
+      <!-- Positions table -->
+      <div class="table-wrap" id="tableWrap"></div>
+
+      <!-- Feedback log export -->
+      <div class="feedback-export">
+        <a href="#" id="feedbackExportLink">Download feedback log (JSON)</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <h2 id="modalTitle">Audit Trail</h2>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script>
+    const TWELVE_DATA_KEY = 'f1cdefbfb3c84b55a1d7985bbf1062a2';
+    const OPENAI_API_KEY = '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';
+
+    // Value-at-Risk stop-loss thresholds (per position, in USD)
+    const HARD_STOP_LOSS = 100000;
+    const SOFT_STOP_LOSS = 70000;
+
+    const auditData = {};
+
+    // --- Checkbox helpers ---
+    function getChecked(containerId) {
+      return [...document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`)].map(cb => cb.value);
+    }
+    function setChecked(containerId, values) {
+      if (!values || !Array.isArray(values) || !values.length) return;
+      document.querySelectorAll(`#${containerId} input[type="checkbox"]`).forEach(cb => { cb.checked = values.includes(cb.value); });
+    }
+
+    // --- Setup / Settings management ---
+    function getSettings() { return JSON.parse(localStorage.getItem('riskAnalyzerSettings') || 'null'); }
+
+    function updateSettingsSummary() {
+      const s = getSettings(); if (!s) return;
+      let txt = `AUM $${s.aum}M  \u00b7  Net Exp ${s.targetMin}\u2013${s.targetMax}%`;
+      if (Array.isArray(s.sectors) && s.sectors.length) txt += `  \u00b7  ${s.sectors.join(', ')}`;
+      else if (typeof s.sectors === 'string' && s.sectors) txt += `  \u00b7  ${s.sectors}`;
+      if (Array.isArray(s.geographies) && s.geographies.length) txt += `  \u00b7  ${s.geographies.join(', ')}`;
+      document.getElementById('rhMeta').textContent = txt;
+    }
+
+    function updateReportHeaderFile(fileName, positionCount) {
+      const fileEl = document.getElementById('rhFile');
+      const fileNameEl = document.getElementById('rhFileName');
+      const dividerEl = document.getElementById('rhDivider1');
+      const replaceBtn = document.getElementById('rhReplace');
+      const initialUpload = document.getElementById('initialUpload');
+      if (fileName) {
+        const ts = new Date().toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+        fileNameEl.textContent = `${fileName} \u00b7 ${positionCount} positions \u00b7 ${ts}`;
+        fileEl.style.display = 'flex';
+        dividerEl.style.display = 'block';
+        replaceBtn.style.display = 'inline-block';
+        initialUpload.style.display = 'none';
+      }
+    }
+
+    function showDashboard(settings) {
+      document.getElementById('aumInput').value = settings.aum;
+      document.getElementById('targetMin').value = settings.targetMin;
+      document.getElementById('targetMax').value = settings.targetMax;
+      setChecked('dashSectors', settings.sectors || []);
+      setChecked('dashGeo', settings.geographies || []);
+      document.getElementById('setupScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      updateSettingsSummary();
+    }
+
+    function completeSetup() {
+      const settings = {
+        aum: document.getElementById('setupAum').value || '25',
+        targetMin: document.getElementById('setupMin').value || '20',
+        targetMax: document.getElementById('setupMax').value || '60',
+        sectors: getChecked('setupSectors'),
+        geographies: getChecked('setupGeo')
+      };
+      localStorage.setItem('riskAnalyzerSettings', JSON.stringify(settings));
+      showDashboard(settings);
+      // If CSV was uploaded on setup screen, trigger processing
+      const setupCsv = document.getElementById('setupCsv');
+      if (setupCsv.files.length > 0) {
+        // Transfer the file to the dashboard CSV input and trigger
+        const dt = new DataTransfer();
+        dt.items.add(setupCsv.files[0]);
+        const dashCsv = document.getElementById('csvFile');
+        dashCsv.files = dt.files;
+        dashCsv.dispatchEvent(new Event('change'));
+      }
+    }
+
+    function toggleSettingsEdit() {
+      const panel = document.getElementById('settingsEdit');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function saveAndCollapseSettings() {
+      const settings = {
+        aum: document.getElementById('aumInput').value || '25',
+        targetMin: document.getElementById('targetMin').value || '20',
+        targetMax: document.getElementById('targetMax').value || '60',
+        sectors: getChecked('dashSectors'),
+        geographies: getChecked('dashGeo')
+      };
+      localStorage.setItem('riskAnalyzerSettings', JSON.stringify(settings));
+      document.getElementById('settingsEdit').style.display = 'none';
+      updateSettingsSummary();
+    }
+
+    // Route: setup or dashboard
+    (function init() {
+      const saved = getSettings();
+      if (saved && saved.aum) {
+        showDashboard(saved);
+      } else {
+        document.getElementById('setupScreen').style.display = 'block';
+        document.getElementById('dashboard').style.display = 'none';
+      }
+    })();
+
+    // --- Helpers ---
+    function storeAudit(row, col, data) { if (!auditData[row]) auditData[row] = {}; auditData[row][col] = { ...data, fetchedAt: new Date().toISOString() }; }
+    function fmtTime(iso) { if (!iso) return ''; try { return new Date(iso).toLocaleString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }); } catch { return iso; } }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    function escapeHTML(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+    function findCol(headers, ...names) { const lower = headers.map(h => h.trim().toLowerCase().replace(/[\s\-]/g, '_')); for (const name of names) { const idx = lower.indexOf(name.toLowerCase()); if (idx !== -1) return idx; } return -1; }
+    function ptsClass(p) { return p > 0 ? 'pts-pos' : p < 0 ? 'pts-neg' : 'pts-zero'; }
+    function ptsLabel(p) { return p > 0 ? `+${p}` : `${p}`; }
+
+    // --- VIX (called during processing, not on page load) ---
+    async function loadVIX() {
+      try {
+        const res = await fetch(`https://api.twelvedata.com/price?symbol=VIXY&apikey=${TWELVE_DATA_KEY}`);
+        if (!res.ok) { window._vixData = { value: 'N/A' }; return; }
+        const data = await res.json();
+        if (!data?.price) { window._vixData = { value: 'N/A' }; return; }
+        const vix = parseFloat(data.price).toFixed(2);
+        const v = parseFloat(vix);
+        let levelClass, levelText, desc;
+        if (v < 20) { levelClass = 'vix-low'; levelText = 'LOW'; desc = 'Market calm — low fear, stable conditions.'; }
+        else if (v < 25) { levelClass = 'vix-moderate'; levelText = 'MODERATE'; desc = 'Normal volatility — some uncertainty priced in.'; }
+        else if (v < 35) { levelClass = 'vix-high'; levelText = 'HIGH'; desc = 'Elevated fear — consider tightening stops.'; }
+        else { levelClass = 'vix-extreme'; levelText = 'EXTREME'; desc = 'Market stress — high risk of sharp moves.'; }
+        window._vixData = { value: vix, level: levelText, levelClass, desc, suggestion: (v > 25 ? 'VIX high \u2014 consider reducing net exposure' : v < 15 ? 'VIX low \u2014 net exposure can be higher' : '') };
+        window._vixAudit = { value: vix, level: levelText, desc, fetchedAt: new Date().toISOString() };
+      } catch { window._vixData = { value: 'N/A' }; window._vixAudit = { value: 'N/A', fetchedAt: new Date().toISOString() }; }
+    }
+
+    // Render the condensed metrics strip (replaces VIX bar + Exposure bar)
+    function renderMetricsStrip(m) {
+      const fmtMoney = v => `$${(v/1e6).toFixed(2)}M`;
+      const expColor = (m.netExposure >= m.targetMin && m.netExposure <= m.targetMax) ? 'var(--signal-up)' : 'var(--signal-down)';
+      const expRange = (m.netExposure >= m.targetMin && m.netExposure <= m.targetMax) ? 'within target' :
+                       m.netExposure < m.targetMin ? `below ${m.targetMin}\u2013${m.targetMax}%` : `above ${m.targetMin}\u2013${m.targetMax}%`;
+      const v = window._vixData || {};
+      const vixHTML = v.value && v.value !== 'N/A' ?
+        `<span class="m-value">${v.value}</span><span class="m-badge ${v.levelClass}">${v.level}</span>` :
+        `<span class="m-value">N/A</span>`;
+      const longColor = m.largestLongPct > 10 ? 'var(--signal-down)' : 'var(--text-primary)';
+      const shortColor = m.largestShortPct > 4 ? 'var(--signal-down)' : 'var(--text-primary)';
+      const illiqColor = m.illiquidPct > 15 ? 'var(--signal-warn)' : 'var(--signal-up)';
+      const html = `
+        <div class="metric">
+          <span class="m-label">Volatility</span>
+          ${vixHTML}
+          <button class="audit-btn" onclick="showVIXAudit()" title="View audit trail">&#8505;</button>
+        </div>
+        <div class="metric">
+          <span class="m-label">Net Exp</span>
+          <span class="m-value" style="color:${expColor};">${m.netExposure >= 0 ? '+' : ''}${m.netExposure.toFixed(2)}%</span>
+          <span class="m-sub">${expRange}</span>
+        </div>
+        <div class="metric">
+          <span class="m-label">Long</span>
+          <span class="m-value">${fmtMoney(m.longMV)}</span>
+        </div>
+        <div class="metric">
+          <span class="m-label">Short</span>
+          <span class="m-value">${fmtMoney(m.shortMV)}</span>
+        </div>
+        <div class="metric">
+          <span class="m-label">Largest L</span>
+          <span class="m-value" style="color:${longColor};">${m.largestLong.ticker} ${m.largestLongPct.toFixed(2)}%</span>
+        </div>
+        <div class="metric">
+          <span class="m-label">Largest S</span>
+          <span class="m-value" style="color:${shortColor};">${m.largestShort.ticker} ${m.largestShortPct.toFixed(2)}%</span>
+        </div>
+        <div class="metric">
+          <span class="m-label">Illiquid</span>
+          <span class="m-value" style="color:${illiqColor};">${m.illiquidPct.toFixed(2)}%</span>
+          <button class="audit-btn" onclick="showExposureAudit()" title="View audit trail">&#8505;</button>
+        </div>`;
+      document.getElementById('metricsStrip').innerHTML = html;
+    }
+
+    // --- Modal ---
+    document.getElementById('modalClose').onclick = () => document.getElementById('modalOverlay').classList.remove('active');
+    document.getElementById('modalOverlay').onclick = (e) => { if (e.target === e.currentTarget) e.currentTarget.classList.remove('active'); };
+
+    function openModal(title, html) {
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalBody').innerHTML = html;
+      document.getElementById('modalOverlay').classList.add('active');
+    }
+
+    // --- PM-friendly audit renderers ---
+    function showVIXAudit() {
+      const d = window._vixAudit; if (!d) return;
+      openModal('Market Volatility', `
+        <div class="audit-section"><h3>Value</h3><p><strong>$${d.value}</strong> — ${d.level || ''}</p></div>
+        <div class="audit-section"><h3>What This Means</h3><p>${d.desc || 'N/A'}</p></div>
+        <div class="audit-section"><h3>Source</h3><p>Twelve Data — VIXY (ProShares VIX Short-Term Futures ETF)</p></div>
+        <div class="audit-section"><h3>Methodology</h3><p>VIXY tracks VIX short-term futures and moves directionally with the CBOE Volatility Index (^VIX). Absolute price differs from spot VIX due to futures contango. Severity bands: LOW &lt; $20, MODERATE $20-25, HIGH $25-35, EXTREME &gt; $35.</p></div>
+        <div class="audit-meta">Retrieved: ${fmtTime(d.fetchedAt)}</div>`);
+    }
+
+    function showExposureAudit() {
+      const d = window._exposureAudit; if (!d) return;
+      const r = d.rawData;
+      let posRows = '';
+      if (r.positions) r.positions.forEach(p => { posRows += `<tr><td>${p.ticker}</td><td>${p.side}</td><td>${p.qty}</td><td>$${p.price.toFixed(2)}</td><td>$${p.mv.toLocaleString()}</td></tr>`; });
+      openModal('Net Exposure', `
+        <div class="audit-section"><h3>Value</h3><p><strong>${d.displayValue}</strong></p></div>
+        <div class="audit-section"><h3>Methodology</h3>
+          <p><strong>Net Exposure</strong> = (Long Market Value - Short Market Value) / AUM</p>
+          <p><strong>Market Value</strong> = Quantity x Current Price</p>
+          <p><strong>AUM</strong> = $${(r.AUM/1e6).toFixed(0)}M (hardcoded)</p>
+        </div>
+        <div class="audit-section"><h3>Breakdown</h3>
+          <table class="score-table"><tr><th>Ticker</th><th>Side</th><th>Qty</th><th>Price</th><th>Market Value</th></tr>${posRows}</table>
+          <p style="margin-top:8px;"><strong>Long MV:</strong> $${(parseFloat(r.longMV)/1e6).toFixed(2)}M | <strong>Short MV:</strong> $${(parseFloat(r.shortMV)/1e6).toFixed(2)}M</p>
+        </div>
+        <div class="audit-section"><h3>Concentration</h3>
+          <p><strong>Largest long:</strong> ${r.largestLong.ticker} at ${r.largestLong.pctOfAUM} of AUM ${r.largestLong.warning !== 'OK' ? '<span style="color:#EF5350;">(EXCEEDS 10% LIMIT)</span>' : '(within limit)'}</p>
+          <p><strong>Largest short:</strong> ${r.largestShort.ticker} at ${r.largestShort.pctOfAUM} of AUM ${r.largestShort.warning !== 'OK' ? '<span style="color:#EF5350;">(EXCEEDS 4% LIMIT)</span>' : '(within limit)'}</p>
+        </div>
+        <div class="audit-meta">Calculated: ${fmtTime(d.fetchedAt)}</div>`);
+    }
+
+    // --- Section builders for the unified Position Detail modal ---
+    function buildBetaSection(d) {
+      const b = parseFloat(d.displayValue);
+      let meaning = 'Data not available.';
+      if (!isNaN(b)) {
+        if (b > 1.5) meaning = `This stock is ${((b-1)*100).toFixed(0)}% more volatile than the S&P 500. High beta increases risk — price swings will be amplified in both directions.`;
+        else if (b > 1) meaning = `This stock is ${((b-1)*100).toFixed(0)}% more volatile than the S&P 500. Moderate volatility premium.`;
+        else if (b > 0.5) meaning = `This stock moves roughly in line with the market. Relatively stable.`;
+        else meaning = `This stock is defensive — significantly less volatile than the market.`;
+      }
+      return `<div class="audit-section"><h3>Beta — ${d.displayValue}</h3><p>${meaning}</p>
+        <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">5-year monthly beta vs. S&P 500. Source: stockanalysis.com.</p></div>`;
+    }
+    function buildShortSection(d) {
+      const pct = parseFloat(d.displayValue);
+      let meaning = 'Data not available.';
+      if (!isNaN(pct)) {
+        if (pct > 20) meaning = `${pct.toFixed(1)}% of float — heavily shorted. Strong institutional bearish conviction and amplified downside risk. Potential short squeeze candidate.`;
+        else if (pct > 10) meaning = `${pct.toFixed(1)}% of float — elevated bearish positioning, not at extreme levels.`;
+        else if (pct > 5) meaning = `${pct.toFixed(1)}% of float — moderate bearish positioning, within normal range.`;
+        else meaning = `${pct.toFixed(1)}% of float — low level. Shorts are not a significant factor.`;
+      }
+      return `<div class="audit-section"><h3>Short Interest — ${d.displayValue}</h3><p>${meaning}</p>
+        <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">Shares Sold Short / Float. Updated bi-monthly. Source: stockanalysis.com (FINRA filings).</p></div>`;
+    }
+    function buildPCSection(d) {
+      const ratio = parseFloat(d.displayValue);
+      let meaning = 'Data not available.';
+      if (!isNaN(ratio)) {
+        if (ratio > 1.0) meaning = `Ratio ${ratio.toFixed(2)} — more puts than calls. Options market positioning bearishly.`;
+        else if (ratio > 0.7) meaning = `Ratio ${ratio.toFixed(2)} — balanced with slight put skew. No strong directional conviction.`;
+        else if (ratio > 0.5) meaning = `Ratio ${ratio.toFixed(2)} — more calls than puts. Mildly bullish.`;
+        else meaning = `Ratio ${ratio.toFixed(2)} — significantly more calls. Strong bullish positioning.`;
+      }
+      let historyHTML = '';
+      if (d.recentHistory?.length) {
+        historyHTML = '<p style="font-size:11px; color:var(--text-muted); margin-top:6px;"><strong>Recent:</strong> ' + d.recentHistory.map(p => `${p.value?.toFixed(2) || 'N/A'}`).join(' → ') + '</p>';
+      }
+      return `<div class="audit-section"><h3>P/C Ratio — ${d.displayValue}</h3><p>${meaning}</p>${historyHTML}
+        <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">30-day put/call open interest. Source: AlphaQuery.</p></div>`;
+    }
+    function buildNewsSection(d) {
+      let articlesHTML = '<p style="color:var(--text-muted);">No recent articles found.</p>';
+      if (d.articles?.length) {
+        articlesHTML = '<ul style="padding-left:16px;">' + d.articles.map(a => `<li style="margin-bottom:6px;"><a href="${a.link}" target="_blank" rel="noopener">${escapeHTML(a.title)}</a><br><span style="font-size:11px;color:var(--text-muted);">${a.pubDate || ''}</span></li>`).join('') + '</ul>';
+      }
+      return `<div class="audit-section"><h3>News</h3>
+        <p><strong>${escapeHTML(d.displayValue || '')}</strong></p>
+        ${articlesHTML}
+        <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">Top 3 headlines from last 48h via Google News RSS, summarised by GPT-4o Mini.</p></div>`;
+    }
+    function buildSentSection(d) {
+      let sourcesHTML = '';
+      if (d.sourceCounts) {
+        sourcesHTML = `<p style="font-size:11px; color:var(--text-muted); margin-top:6px;">Reddit posts: ${d.sourceCounts.redditPosts} · comments: ${d.sourceCounts.redditComments} · Seeking Alpha: ${d.sourceCounts.seekingAlpha}</p>`;
+      }
+      let analystHTML = '';
+      if (d.analystSummary && d.analystSummary !== 'N/A') {
+        analystHTML = `<p><strong>Analyst consensus:</strong> ${escapeHTML(d.analystSummary)}</p>`;
+      }
+      return `<div class="audit-section"><h3>Sentiment</h3>
+        ${analystHTML}
+        <p><strong>Retail (AI summary):</strong> ${escapeHTML(d.displayValue || '')}</p>
+        ${sourcesHTML}
+        <p style="font-size:11px; color:var(--text-muted); margin-top:6px;">Reddit (PullPush) + Seeking Alpha (RSS), last 7 days, GPT-4o Mini.</p></div>`;
+    }
+    function buildRecSection(d) {
+      let breakdownRows = '';
+      if (d.scoreBreakdown) {
+        d.scoreBreakdown.forEach(s => {
+          breakdownRows += `<tr><td>${s.signal}</td><td>${s.condition}</td><td class="${ptsClass(s.points)}">${ptsLabel(s.points)}</td></tr>`;
+        });
+        breakdownRows += `<tr style="font-weight:700; border-top:2px solid var(--border-default);"><td colspan="2">Total Score</td><td class="${ptsClass(d.deterministicScore)}">${ptsLabel(d.deterministicScore)}</td></tr>`;
+      }
+      const verdictClass = d.llmAgreed ? 'verdict-agree' : 'verdict-adjust';
+      const verdictText = d.llmAgreed ? 'AGREED' : 'ADJUSTED';
+      return `<div class="audit-section"><h3>Recommendation — ${d.finalRecommendation}</h3>
+        <table class="score-table"><tr><th>Signal</th><th>Condition</th><th>Pts</th></tr>${breakdownRows}</table>
+        <p style="margin-top:8px;">Thresholds: ≥-2 HOLD · -3 to -9 REDUCE · ≤-10 EXIT</p>
+        <p><strong>Model verdict:</strong> ${d.deterministicRec} · <span class="${verdictClass}">AI ${verdictText}</span></p>
+        ${d.llmReason ? `<p><strong>AI reasoning:</strong> ${escapeHTML(d.llmReason)}</p>` : ''}</div>`;
+    }
+
+    // Unified Position Detail modal — opens from a single info button per row
+    function showPositionDetail(rowIdx, ticker) {
+      const data = auditData[rowIdx] || {};
+      const sections = [];
+      if (data['AI Recommendation']) sections.push(buildRecSection(data['AI Recommendation']));
+      if (data['Beta']) sections.push(buildBetaSection(data['Beta']));
+      if (data['Short Interest']) sections.push(buildShortSection(data['Short Interest']));
+      if (data['P/C Ratio']) sections.push(buildPCSection(data['P/C Ratio']));
+      if (data['News']) sections.push(buildNewsSection(data['News']));
+      if (data['Sentiment']) sections.push(buildSentSection(data['Sentiment']));
+      if (!sections.length) sections.push('<p style="color:var(--text-muted);">No detail data available for this position.</p>');
+      openModal(`${ticker} — Position Detail`, sections.join(''));
+    }
+
+    // --- Deterministic Scoring Model ---
+    function calculateScore(signals) {
+      const breakdown = [];
+      const price = parseFloat(signals.price) || 0;
+      const stop = parseFloat(signals.stop) || 0;
+      const side = (signals.side || 'long').toLowerCase();
+
+      // 1. Price vs Stop (-10 breached, -5 within 5%)
+      // For longs: price BELOW stop is bad. For shorts: price ABOVE stop is bad.
+      let stopDist, pricePoints = 0, priceCond = '';
+      if (side === 'short') {
+        // Short: stop is above entry. Breached = price has risen above stop.
+        stopDist = stop > 0 ? (stop - price) / stop : 0; // positive = safe (price below stop), negative = breached
+        if (stopDist < 0) { pricePoints = -10; priceCond = `$${price} is above stop $${stop} — short stop breached`; }
+        else if (stopDist <= 0.05) { pricePoints = -5; priceCond = `$${price} is within 5% below stop $${stop} — short at risk`; }
+        else { pricePoints = 0; priceCond = `$${price} is ${(stopDist*100).toFixed(1)}% below stop $${stop} — short is working`; }
+      } else {
+        // Long: stop is below entry. Breached = price has fallen below stop.
+        stopDist = stop > 0 ? (price - stop) / stop : 0; // positive = safe, negative = breached
+        if (stopDist < 0) { pricePoints = -10; priceCond = `$${price} is below stop $${stop} — long stop breached`; }
+        else if (stopDist <= 0.05) { pricePoints = -5; priceCond = `$${price} is within 5% above stop $${stop} — long at risk`; }
+        else { pricePoints = 0; priceCond = `$${price} is ${(stopDist*100).toFixed(1)}% above stop $${stop} — comfortable`; }
+      }
+      const pricePct = stopDist; // used by beta and liquidity checks later
+      breakdown.push({ signal: 'Price vs Stop', condition: priceCond, points: pricePoints });
+
+      // 2. Short Interest (-3 if >20%)
+      const si = parseFloat(signals.shortInterest);
+      let siPoints = 0, siCond = 'N/A';
+      if (!isNaN(si)) {
+        if (si > 20) { siPoints = -3; siCond = `${si.toFixed(1)}% of float (heavily shorted, >20%)`; }
+        else { siPoints = 0; siCond = `${si.toFixed(1)}% of float (<20%, no penalty)`; }
+      }
+      breakdown.push({ signal: 'Short Interest', condition: siCond, points: siPoints });
+
+      // 3. P/C Ratio (-3 if >1.0)
+      const pc = parseFloat(signals.pcRatio);
+      let pcPoints = 0, pcCond = 'N/A';
+      if (!isNaN(pc)) {
+        if (pc > 1.0) { pcPoints = -3; pcCond = `${pc.toFixed(4)} (bearish, >1.0)`; }
+        else { pcPoints = 0; pcCond = `${pc.toFixed(4)} (${pc < 0.5 ? 'bullish' : 'neutral'}, <=1.0)`; }
+      }
+      breakdown.push({ signal: 'P/C Ratio', condition: pcCond, points: pcPoints });
+
+      // 4. News catalyst — directional, light-touch penalty + buffer suppression
+      // Penalty only applies when the position is NOT comfortably away from its stop.
+      // If price has >20% buffer (long: above soft / short: below soft), news penalty is suppressed in scoring.
+      // The UI still shows the [BEARISH]/[BULLISH] tag in bold contrarian color regardless — so the PM is alerted, but the score doesn't drag a clearly bullish position down on news alone.
+      // Side-aware: bearish news only penalizes longs; bullish news only penalizes shorts.
+      const news = signals.newsSummary || '';
+      const hasBuffer = pricePct > 0.20; // pricePct is positive = safe; >20% = comfortable buffer
+      let nPoints = 0, nCond = 'No recent news or neutral';
+      if (news.includes('[BEARISH]')) {
+        if (side === 'long') {
+          if (hasBuffer) { nPoints = 0; nCond = 'Bearish news on long with >20% buffer above stop — score suppressed; visual flag only'; }
+          else { nPoints = -2; nCond = 'Bearish catalyst on long (early warning, no buffer)'; }
+        } else {
+          nCond = 'Bearish news on short — directional tailwind (no penalty)';
+        }
+      } else if (news.includes('[BULLISH]')) {
+        if (side === 'short') {
+          if (hasBuffer) { nPoints = 0; nCond = 'Bullish news on short with >20% buffer below stop — score suppressed; visual flag only'; }
+          else { nPoints = -2; nCond = 'Bullish catalyst on short (thesis weakening, no buffer)'; }
+        } else {
+          nCond = 'Bullish news on long (no points — model is risk-focused)';
+        }
+      } else if (news.includes('[NEUTRAL]')) {
+        nCond = 'Neutral';
+      }
+      breakdown.push({ signal: 'News Catalyst', condition: nCond, points: nPoints });
+
+      // 5. Net Exposure (-3 for longs if above max target)
+      const netExp = parseFloat(signals.netExposure);
+      const tMin = signals.targetMin, tMax = signals.targetMax;
+      let nePoints = 0, neCond = 'Within target range';
+      if (!isNaN(netExp)) {
+        if (side === 'long' && netExp > tMax) { nePoints = -3; neCond = `Net exp. ${netExp.toFixed(1)}% exceeds max ${tMax}% (reduce longs)`; }
+        else if (side === 'short' && netExp < tMin) { nePoints = -3; neCond = `Net exp. ${netExp.toFixed(1)}% below min ${tMin}% (reduce shorts)`; }
+        else { neCond = `Net exp. ${netExp.toFixed(1)}% within ${tMin}%-${tMax}% target`; }
+      }
+      breakdown.push({ signal: 'Net Exposure', condition: neCond, points: nePoints });
+
+      // 6. Concentration (-3 if exceeds limit)
+      let cPoints = 0, cCond = 'No concentration issue';
+      if (side === 'long' && signals.isLargestLong && signals.largestLongPct > 10) { cPoints = -3; cCond = `Largest long at ${signals.largestLongPct.toFixed(2)}% of AUM (exceeds 10% limit)`; }
+      else if (side === 'short' && signals.isLargestShort && signals.largestShortPct > 4) { cPoints = -3; cCond = `Largest short at ${signals.largestShortPct.toFixed(2)}% of AUM (exceeds 4% limit)`; }
+      breakdown.push({ signal: 'Concentration', condition: cCond, points: cPoints });
+
+      // 7. VIX (-2 if >25, recommends reducing net exposure)
+      const vixPrice = parseFloat(window._vixAudit?.value);
+      let vPoints = 0, vCond = 'N/A';
+      if (!isNaN(vixPrice)) {
+        if (vixPrice > 25) { vPoints = -2; vCond = `VIXY at $${vixPrice.toFixed(2)} (elevated volatility, >$25)`; }
+        else { vPoints = 0; vCond = `VIXY at $${vixPrice.toFixed(2)} (calm, <=$25)`; }
+      }
+      breakdown.push({ signal: 'VIX (Volatility)', condition: vCond, points: vPoints });
+
+      // 8. Beta (-3 if >1.5 and stock falling while market flat)
+      const beta = parseFloat(signals.beta);
+      let bPoints = 0, bCond = 'N/A';
+      if (!isNaN(beta)) {
+        if (beta > 1.5 && pricePct < 0.05) { bPoints = -3; bCond = `${beta.toFixed(2)} (high beta >1.5 with price near/below stop — amplified risk)`; }
+        else if (beta > 1.5) { bPoints = 0; bCond = `${beta.toFixed(2)} (high beta, but price comfortably above stop)`; }
+        else { bPoints = 0; bCond = `${beta.toFixed(2)} (normal/low beta)`; }
+      }
+      breakdown.push({ signal: 'Beta', condition: bCond, points: bPoints });
+
+      // 9. Analyst Strong Buy (+1 only — low weight)
+      const a = (signals.analysts || '').toLowerCase();
+      let aPoints = 0, aCond = 'N/A';
+      if (a.includes('strong buy')) { aPoints = 1; aCond = 'Strong Buy (+1, low weight)'; }
+      else if (a.includes('buy')) { aCond = 'Buy (no points)'; }
+      else if (a.includes('sell')) { aCond = 'Sell (no points — captured in other signals)'; }
+      else if (a !== 'n/a' && a) { aCond = signals.analysts; }
+      breakdown.push({ signal: 'Analyst Consensus', condition: aCond, points: aPoints });
+
+      // 10. Liquidity (-4 if illiquid AND near stop, -1 if illiquid but far from stop)
+      let liqPoints = 0, liqCond = 'N/A';
+      if (signals.liquidityRatio != null) {
+        if (signals.liquidityRatio > 3 && pricePct <= 0.10) { liqPoints = -4; liqCond = `${signals.liquidityRatio.toFixed(1)}% of ADV — illiquid AND price within 10% of stop (exit impaired)`; }
+        else if (signals.liquidityRatio > 3) { liqPoints = -1; liqCond = `${signals.liquidityRatio.toFixed(1)}% of ADV — illiquid but price far from stop`; }
+        else { liqCond = `${signals.liquidityRatio.toFixed(1)}% of ADV — liquid`; }
+      }
+      breakdown.push({ signal: 'Liquidity', condition: liqCond, points: liqPoints });
+
+      const totalScore = breakdown.reduce((s, b) => s + b.points, 0);
+      let recommendation = 'HOLD';
+      if (totalScore <= -10) recommendation = 'EXIT';
+      else if (totalScore <= -3) recommendation = 'REDUCE';
+
+      return { totalScore, recommendation, breakdown };
+    }
+
+    // --- AI Qualitative Overlay ---
+    const OVERLAY_PROMPT = `You are a qualitative risk overlay for a hedge fund. A deterministic scoring model has already produced a recommendation. Your job is to review the data and decide whether to AGREE or ADJUST by exactly one level.
+
+Rules:
+- You may only adjust by ONE level (HOLD<>REDUCE or REDUCE<>EXIT). Never jump two levels.
+- If you AGREE, say AGREE and confirm the key signal in one sentence.
+- If you ADJUST, state the specific reason citing data nuance the model cannot capture.
+
+Output format exactly:
+VERDICT: [AGREE/ADJUST]
+FINAL: [EXIT/REDUCE/HOLD]
+REASON: [One sentence]`;
+
+    async function getQualitativeOverlay(signalText, scoreResult) {
+      const userMsg = `${signalText}\n\n=== DETERMINISTIC SCORE ===\nTotal: ${scoreResult.totalScore} → ${scoreResult.recommendation}\nBreakdown:\n${scoreResult.breakdown.map(b => `  ${b.signal}: ${ptsLabel(b.points)} (${b.condition})`).join('\n')}`;
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [
+          { role: 'system', content: OVERLAY_PROMPT },
+          { role: 'user', content: userMsg }
+        ], temperature: 0 })
+      });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || `HTTP ${res.status}`); }
+      const data = await res.json();
+      const text = data.choices[0].message.content.trim();
+      // Parse response
+      const verdictMatch = text.match(/VERDICT:\s*(AGREE|ADJUST)/i);
+      const finalMatch = text.match(/FINAL:\s*(EXIT|REDUCE|HOLD)/i);
+      const reasonMatch = text.match(/REASON:\s*(.+)/i);
+      const verdict = verdictMatch ? verdictMatch[1].toUpperCase() : 'AGREE';
+      let llmFinal = finalMatch ? finalMatch[1].toUpperCase() : scoreResult.recommendation;
+      const reason = reasonMatch ? reasonMatch[1].trim() : '';
+      // Validate: can only adjust by one level
+      const levels = ['HOLD', 'REDUCE', 'EXIT'];
+      const modelIdx = levels.indexOf(scoreResult.recommendation);
+      const llmIdx = levels.indexOf(llmFinal);
+      if (Math.abs(modelIdx - llmIdx) > 1) llmFinal = scoreResult.recommendation;
+      return { verdict, final: llmFinal, reason, agreed: verdict === 'AGREE' || llmFinal === scoreResult.recommendation };
+    }
+
+    // --- Data fetchers (unchanged logic, cleaned audit storage) ---
+    async function fetchJSON(targetUrl) {
+      for (const url of [`https://api.codetabs.com/v1/proxy?quest=${targetUrl}`, `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`]) {
+        try { const r = await fetch(url); if (r.ok) return await r.json(); } catch {} }
+      return null;
+    }
+
+    async function fetchOverview(ticker, rowIdx) {
+      const result = { beta: 'N/A', analysts: 'N/A', analystTarget: null, sector: 'Unknown', industry: 'Unknown' };
+      try {
+        const data = await fetchJSON(`https://api.stockanalysis.com/api/symbol/s/${ticker}/overview`);
+        if (!data) return result;
+        const beta = data?.data?.beta;
+        if (beta != null) result.beta = parseFloat(beta).toFixed(2);
+        const rating = data?.data?.analystIntro;
+        const target = data?.data?.analystTarget;
+        let targetVal = null;
+        if (target != null) { targetVal = typeof target === 'object' ? (target.average ?? target.median ?? Object.values(target)[0]) : target; }
+        if (rating && targetVal != null) result.analysts = `${rating} | PT: $${parseFloat(targetVal).toFixed(2)}`;
+        else if (rating) result.analysts = rating;
+        result.analystTarget = targetVal;
+        // Extract sector & industry from infoTable
+        const info = data?.data?.infoTable;
+        if (Array.isArray(info)) {
+          const sectorRow = info.find(r => r.t === 'Sector');
+          const industryRow = info.find(r => r.t === 'Industry');
+          if (sectorRow?.v) result.sector = sectorRow.v;
+          if (industryRow?.v) result.industry = industryRow.v;
+        }
+        storeAudit(rowIdx, 'Beta', { label: `Beta — ${ticker}`, displayValue: result.beta });
+        storeAudit(rowIdx, 'Sentiment', { ...(auditData[rowIdx]?.['Sentiment'] || {}), analystSummary: result.analysts });
+      } catch {}
+      return result;
+    }
+
+    async function fetchStatistics(ticker, rowIdx) {
+      const result = { shortInterest: 'N/A', adv: null };
+      try {
+        const data = await fetchJSON(`https://api.stockanalysis.com/api/symbol/s/${ticker}/statistics`);
+        if (!data) { storeAudit(rowIdx, 'Short Interest', { label: `Short Interest — ${ticker}`, displayValue: 'N/A' }); return result; }
+        const items = data?.data?.shortSelling?.data;
+        if (Array.isArray(items)) {
+          const f = items.find(i => i.id === 'shortFloat'); if (f) result.shortInterest = f.value;
+          else { const s = items.find(i => i.id === 'shortShares'); if (s) result.shortInterest = s.value; }
+        }
+        // Extract ADV (20-day average volume)
+        const allSections = data?.data;
+        if (allSections) {
+          for (const section of Object.values(allSections)) {
+            if (section?.data && Array.isArray(section.data)) {
+              const advItem = section.data.find(i => i.id === 'averageVolume');
+              if (advItem) { result.adv = parseFloat(advItem.hover?.replace(/,/g, '')) || parseFloat(advItem.value?.replace(/[^0-9.]/g, '')) || null; break; }
+            }
+          }
+        }
+        storeAudit(rowIdx, 'Short Interest', { label: `Short Interest — ${ticker}`, displayValue: result.shortInterest });
+        return result;
+      } catch { storeAudit(rowIdx, 'Short Interest', { label: `Short Interest — ${ticker}`, displayValue: 'N/A' }); return result; }
+    }
+
+    async function fetchPutCallRatio(ticker, rowIdx) {
+      try {
+        const url = `https://api.codetabs.com/v1/proxy/?quest=https://www.alphaquery.com/data/option-statistic-chart?ticker=${encodeURIComponent(ticker)}%26perType=30-day%26identifier=put-call-ratio-oi`;
+        const res = await fetch(url);
+        if (!res.ok) { storeAudit(rowIdx, 'P/C Ratio', { label: `Put/Call Ratio — ${ticker}`, displayValue: 'N/A' }); return 'N/A'; }
+        const data = await res.json();
+        if (!Array.isArray(data) || !data.length) { storeAudit(rowIdx, 'P/C Ratio', { label: `Put/Call Ratio — ${ticker}`, displayValue: 'N/A' }); return 'N/A'; }
+        const latest = data[data.length - 1];
+        const value = latest?.value != null ? parseFloat(latest.value).toFixed(4) : 'N/A';
+        storeAudit(rowIdx, 'P/C Ratio', { label: `Put/Call Ratio — ${ticker}`, displayValue: value, recentHistory: data.slice(-5) });
+        return value;
+      } catch { storeAudit(rowIdx, 'P/C Ratio', { label: `Put/Call Ratio — ${ticker}`, displayValue: 'N/A' }); return 'N/A'; }
+    }
+
+    async function fetchNews(ticker, rowIdx) {
+      try {
+        const rssUrl = encodeURIComponent(`https://news.google.com/rss/search?q=${ticker}+stock&hl=en-US&gl=US&ceid=US:en`);
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+        if (!res.ok) { storeAudit(rowIdx, 'News', { label: `News — ${ticker}`, displayValue: 'No news reported in the last 48 hours.', articles: [] }); return { summary: 'No news reported in the last 48 hours.', articles: [] }; }
+        const data = await res.json();
+        if (data.status !== 'ok' || !data.items?.length) { storeAudit(rowIdx, 'News', { label: `News — ${ticker}`, displayValue: 'No news reported in the last 48 hours.', articles: [] }); return { summary: 'No news reported in the last 48 hours.', articles: [] }; }
+        const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+        const recent = data.items.filter(item => new Date(item.pubDate).getTime() >= cutoff);
+        if (!recent.length) { storeAudit(rowIdx, 'News', { label: `News — ${ticker}`, displayValue: 'No news reported in the last 48 hours.', articles: [] }); return { summary: 'No news reported in the last 48 hours.', articles: [] }; }
+        const top3 = recent.slice(0, 3);
+        const articles = top3.map(item => ({ title: item.title, link: item.link, pubDate: item.pubDate }));
+        const headlinesForAI = top3.map((item, i) => `${i + 1}. ${item.title}\n   ${(item.description || '').replace(/<[^>]*>/g, '').slice(0, 200)}`).join('\n');
+        const summary = await summarizeNews(ticker, headlinesForAI);
+        storeAudit(rowIdx, 'News', { label: `News — ${ticker}`, displayValue: summary, articles });
+        return { summary, articles };
+      } catch { storeAudit(rowIdx, 'News', { label: `News — ${ticker}`, displayValue: 'No news reported in the last 48 hours.', articles: [] }); return { summary: 'No news reported in the last 48 hours.', articles: [] }; }
+    }
+
+    async function summarizeNews(ticker, headlines) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+          body: JSON.stringify({ model: 'gpt-4o-mini', messages: [
+            { role: 'system', content: 'You summarize stock news for a hedge fund portfolio manager. Given a ticker and its latest headlines with descriptions, write ONE sentence (max 25 words) that captures the key signal a PM needs to know. Start with a sentiment tag: [BULLISH], [BEARISH], or [NEUTRAL]. Be specific — name the catalyst.' },
+            { role: 'user', content: `Ticker: ${ticker}\n\n${headlines}` }
+          ], temperature: 0 }) });
+        if (!res.ok) return 'No news available';
+        return (await res.json()).choices[0].message.content.trim();
+      } catch { return 'No news available'; }
+    }
+
+    async function fetchSentiment(ticker, rowIdx) {
+      const weekAgo = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+      const [rp, rc, sa] = await Promise.all([fetchRedditPosts(ticker, weekAgo), fetchRedditComments(ticker, weekAgo), fetchSeekingAlpha(ticker)]);
+      const allSources = [...rp.items, ...rc.items, ...sa.items];
+      if (!allSources.length) {
+        storeAudit(rowIdx, 'Sentiment', { ...(auditData[rowIdx]?.['Sentiment'] || {}), label: `Sentiment — ${ticker}`, displayValue: 'No retail discussion found in the last 7 days.', sourceCounts: { redditPosts: 0, redditComments: 0, seekingAlpha: 0 } });
+        return { summary: 'No retail discussion found in the last 7 days.', posts: [] };
+      }
+      let aiText = '';
+      if (rp.items.length) aiText += `REDDIT POSTS:\n${rp.items.join('\n')}\n\n`;
+      if (rc.items.length) aiText += `REDDIT COMMENTS:\n${rc.items.join('\n')}\n\n`;
+      if (sa.items.length) aiText += `SEEKING ALPHA:\n${sa.items.join('\n')}\n\n`;
+      const summary = await summarizeSentiment(ticker, aiText);
+      storeAudit(rowIdx, 'Sentiment', { ...(auditData[rowIdx]?.['Sentiment'] || {}), label: `Sentiment — ${ticker}`, displayValue: summary, sourceCounts: { redditPosts: rp.items.length, redditComments: rc.items.length, seekingAlpha: sa.items.length } });
+      return { summary, posts: [...rp.links, ...rc.links, ...sa.links] };
+    }
+
+    async function fetchRedditPosts(ticker, after) {
+      try { const res = await fetch(`https://api.pullpush.io/reddit/search/submission/?q=${encodeURIComponent(ticker + ' stock')}&size=10&sort=desc&sort_type=created_utc&after=${after}`);
+        if (!res.ok) return { items: [], links: [] }; const data = await res.json(); const posts = (data?.data || []).filter(p => p.created_utc >= after).slice(0, 5);
+        return { items: posts.map((p, i) => `${i + 1}. [r/${p.subreddit}] ${p.title}${p.selftext ? ' — ' + p.selftext.replace(/\n/g, ' ').slice(0, 150) : ''}`), links: posts.map(p => ({ label: `r/${p.subreddit}`, link: `https://www.reddit.com${p.permalink}` })) };
+      } catch { return { items: [], links: [] }; } }
+
+    async function fetchRedditComments(ticker, after) {
+      try { const res = await fetch(`https://api.pullpush.io/reddit/search/comment/?q=${encodeURIComponent(ticker)}&size=10&sort=desc&sort_type=created_utc&after=${after}`);
+        if (!res.ok) return { items: [], links: [] }; const data = await res.json(); const comments = (data?.data || []).filter(c => c.created_utc >= after).slice(0, 5);
+        return { items: comments.map((c, i) => `${i + 1}. [r/${c.subreddit}] ${c.body.replace(/\n/g, ' ').slice(0, 200)}`), links: comments.map(c => ({ label: `r/${c.subreddit}`, link: `https://www.reddit.com${c.permalink}` })) };
+      } catch { return { items: [], links: [] }; } }
+
+    async function fetchSeekingAlpha(ticker) {
+      try { const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(`https://seekingalpha.com/api/sa/combined/${ticker}.xml`)}`);
+        if (!res.ok) return { items: [], links: [] }; const data = await res.json(); if (data.status !== 'ok' || !data.items?.length) return { items: [], links: [] }; const top = data.items.slice(0, 5);
+        return { items: top.map((a, i) => `${i + 1}. [Seeking Alpha] ${a.title}`), links: top.map(a => ({ label: 'SA', link: a.link })) };
+      } catch { return { items: [], links: [] }; } }
+
+    async function summarizeSentiment(ticker, sourcesText) {
+      try { const res = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+          body: JSON.stringify({ model: 'gpt-4o-mini', messages: [
+            { role: 'system', content: 'You analyze retail investor sentiment for a hedge fund portfolio manager. You will receive data from multiple sources: Reddit posts, Reddit comments, and Seeking Alpha headlines.\n\nWrite ONE sentence (max 30 words) that synthesizes the overall retail sentiment across ALL sources. Start with a sentiment tag: [BULLISH], [BEARISH], or [MIXED]. Be specific — mention the dominant theme.' },
+            { role: 'user', content: `Ticker: ${ticker}\n\n${sourcesText}` }
+          ], temperature: 0 }) });
+        if (!res.ok) return 'Unavailable'; return (await res.json()).choices[0].message.content.trim();
+      } catch { return 'Unavailable'; } }
+
+    // --- Cell rendering ---
+    // Note: setCellWithAudit / setCellHTMLWithAudit no longer inject per-cell audit buttons.
+    // One consolidated info button per row (in the Recommendation cell) opens a unified Position Detail modal.
+    // Audit data is still stored via storeAudit() and read by showPositionDetail().
+    function setCellWithAudit(rowIdx, colIdx, text, colName) {
+      const table = document.querySelector('#tableWrap table'); if (!table) return;
+      const row = table.rows[rowIdx]; if (!row) return;
+      while (row.cells.length <= colIdx) row.insertCell();
+      row.cells[colIdx].style.whiteSpace = 'pre-line';
+      row.cells[colIdx].textContent = text;
+    }
+    function setCellHTMLWithAudit(rowIdx, colIdx, html, colName) {
+      const table = document.querySelector('#tableWrap table'); if (!table) return;
+      const row = table.rows[rowIdx]; if (!row) return;
+      while (row.cells.length <= colIdx) row.insertCell();
+      row.cells[colIdx].style.whiteSpace = 'pre-line';
+      row.cells[colIdx].innerHTML = html;
+    }
+    function updateCell(rowIdx, colIdx, text, className) {
+      const table = document.querySelector('#tableWrap table'); if (!table) return;
+      const row = table.rows[rowIdx]; if (!row) return;
+      while (row.cells.length <= colIdx) row.insertCell();
+      row.cells[colIdx].textContent = text; row.cells[colIdx].className = className; row.cells[colIdx].style.whiteSpace = 'pre-line';
+    }
+
+    // --- CSV parsing ---
+    function parseCSV(text) {
+      const rows = []; let current = []; let field = ''; let inQuotes = false;
+      for (let i = 0; i < text.length; i++) { const ch = text[i];
+        if (inQuotes) { if (ch === '"' && text[i+1] === '"') { field += '"'; i++; } else if (ch === '"') inQuotes = false; else field += ch; }
+        else { if (ch === '"') inQuotes = true; else if (ch === ',') { current.push(field); field = ''; } else if (ch === '\n' || (ch === '\r' && text[i+1] === '\n')) { current.push(field); field = ''; if (ch === '\r') i++; if (current.some(c => c !== '')) rows.push(current); current = []; } else field += ch; }
+      } current.push(field); if (current.some(c => c !== '')) rows.push(current); return rows;
+    }
+    // Per-column classes (matched by index) so we can hide columns via the toggle
+    const COL_CLASSES = ['','','','','','', '', 'col-hardstop', '','','','','',''];
+
+    function renderTable(rows) {
+      const wrap = document.getElementById('tableWrap'); const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      // Single column header row
+      const headerRow = document.createElement('tr');
+      rows[0].forEach((h, idx) => {
+        const th = document.createElement('th'); th.textContent = h;
+        if (COL_CLASSES[idx]) th.className = COL_CLASSES[idx];
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow); table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for (let i = 1; i < rows.length; i++) {
+        const tr = document.createElement('tr');
+        rows[i].forEach((cell, idx) => {
+          const td = document.createElement('td'); td.textContent = cell;
+          if (COL_CLASSES[idx]) td.className = COL_CLASSES[idx];
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody); wrap.innerHTML = ''; wrap.appendChild(table);
+    }
+
+    // === BATCH PORTFOLIO ANALYSIS PROMPT ===
+    const BATCH_PROMPT = `You are a risk analyst for a long-short hedge fund. You will receive a complete portfolio snapshot with all positions and their enrichment data (beta, short interest, P/C ratio, news, sentiment, analyst consensus), plus portfolio-level context (net exposure, VIX, concentration).
+
+You must return a JSON object with exactly this structure (no markdown, no code fences, just raw JSON):
+{
+  "summary": {
+    "exposure_vs_target": "One sentence on net exposure vs target range",
+    "top_risks": ["Risk 1", "Risk 2", "Risk 3"],
+    "sector_exposure": "One sentence on any sector concentration observed",
+    "recommended_actions": ["Action 1", "Action 2", "Action 3"]
+  },
+  "positions": [
+    {
+      "ticker": "NVDA",
+      "recommendation": "HOLD",
+      "reasons": ["Specific reason 1 citing actual numbers", "Specific reason 2 citing actual numbers", "Specific reason 3 citing actual numbers"],
+      "confidence": "High"
+    }
+  ]
+}
+
+Rules for position recommendations:
+- DEFAULT to the deterministic score's recommendation. The score has already weighted price-vs-stop, news, beta, short interest, P/C ratio, liquidity, analyst rating, and concentration.
+- DO NOT override the score by citing a signal that is ALREADY in the score breakdown — that is double-counting. For example: if the breakdown shows "News Catalyst: -2", you cannot use bearish news as your reason to downgrade. The score has already accounted for it.
+- You may adjust by AT MOST ONE level (HOLD↔REDUCE or REDUCE↔EXIT) ONLY if you identify a SPECIFIC concern that is NOT in the breakdown. Examples of legitimate override reasons: an upcoming earnings event in the next 5 days that hasn't been priced in; a specific regulatory or legal catalyst (FDA decision, DOJ probe escalation); a sector-wide structural shift (rate-cut cycle, tariff regime change). Generic restatement of news/sentiment already scored is NOT a valid override reason.
+- HOLD-with-buffer guardrail: if the deterministic recommendation is HOLD AND the price is more than 20% above soft stop (long) or more than 20% below soft stop (short), keep the position at HOLD. News and sentiment already feed the score; the buffer absorbs short-term noise.
+- NEVER override by 2 levels (HOLD→EXIT or EXIT→HOLD).
+- Score thresholds: -2 or higher = HOLD, -3 to -9 = REDUCE, -10 or lower = EXIT
+- Stops are calculated from a fixed-dollar Value at Risk per position: Soft Stop = the price at which the position would be down $70,000 from entry; Hard Stop = the price at which the position would be down $100,000 from entry. If price has breached the hard stop, this is a critical exit signal — the position has lost more than 0.4% of AUM (assuming $25M AUM).
+- The "reasons" field must be an ARRAY of 2-4 short, specific bullet points. Each bullet must:
+  * Cite ACTUAL numbers from the data (e.g. "Price $133.30 is 12.6% above soft stop $118.35")
+  * Reference a specific signal that drove the recommendation
+  * Be 1 sentence max, factual not narrative
+  * NEVER fabricate concerns — if the data says price is comfortably above stop, do not say "close to stop"
+- One of the bullet points MUST cite the actual price-vs-stop distance (e.g. "Price is 8.2% above soft stop" or "Price has breached hard stop by 3%")
+- CRITICAL: You MUST return a recommendation for EVERY position provided. Do not skip or omit any ticker.
+
+Rules for summary:
+- Be direct and actionable — this is for an institutional PM making daily decisions
+- Top risks should be specific (name tickers, cite data)
+- Recommended actions should be concrete (e.g. "Reduce NVDA by 30% to bring largest long below 10% of AUM")
+- The PM's investable sectors and geographies are provided in the portfolio context. Concentration warnings should be relative to the mandate:
+  - If all positions are within mandate sectors/geographies, that is expected — do not flag this as unusual.
+  - But flag if one mandate sector disproportionately dominates another (e.g. 90% tech vs 10% healthcare).
+  - Similarly, flag if one geography dominates when multiple are in the mandate.
+  - If sectors or geographies are not specified, give general concentration warnings.`;
+
+    // === FILE PARSING (CSV + XLSX) ===
+    function parseFile(file, callback) {
+      const reader = new FileReader();
+      const isXlsx = file.name.match(/\.xlsx?$/i);
+      reader.onload = function (ev) {
+        let rows;
+        if (isXlsx) {
+          const wb = XLSX.read(ev.target.result, { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        } else {
+          rows = parseCSV(ev.target.result);
+        }
+        callback(rows);
+      };
+      if (isXlsx) reader.readAsArrayBuffer(file);
+      else reader.readAsText(file);
+    }
+
+    // === COLUMN NORMALISER ===
+    function normaliseRow(headers, row) {
+      const get = (...names) => { const idx = findCol(headers, ...names); return idx !== -1 ? row[idx] : null; };
+      const rawTicker = String(get('ticker', 'instrument', 'symbol', 'bbg') || '');
+      const ticker = rawTicker.replace(/\.(OQ|N|K|L|T|HK|SI|AX|TO|SW|PA|DE|MC|AS|MI|BR|SA|IS|TA|CO|ST|HE|OL|VX|SS|SZ)\b/gi, '')
+                              .replace(/\s+(US|LN|FP|GR|JP|HK|AU|CN)\s+Equity$/i, '')
+                              .replace(/^\./, '')
+                              .trim();
+      if (!ticker) return null;
+
+      const sharesRaw = get('position_eod_shares', 'positioneodshares', 'quantity', 'qty', 'shares');
+      const shares = parseFloat(sharesRaw) || 0;
+      if (shares === 0) return null;
+
+      const sideCol = get('side');
+      const side = sideCol ? String(sideCol).trim().toLowerCase() : (shares > 0 ? 'long' : 'short');
+      const absShares = Math.abs(shares);
+
+      const price = parseFloat(get('eod_price', 'eodprice', 'current_price', 'currentprice', 'price')) || 0;
+      if (price === 0) return null;
+
+      let entry;
+      if (side === 'long') {
+        entry = parseFloat(get('avg_buy_price', 'avgbuyprice', 'entry_price', 'entryprice', 'entry', 'cost')) || price;
+      } else {
+        entry = parseFloat(get('avg_sell_price', 'avgsellprice', 'entry_price', 'entryprice', 'entry', 'cost')) || price;
+      }
+
+      const posUSD = get('position_eod_usd', 'positioneodusd');
+      const mv = posUSD != null && posUSD !== '' ? Math.abs(parseFloat(posUSD)) : absShares * price;
+
+      const fileBeta = get('beta');
+      const fileADV = get('adv_usd', 'advusd', 'adv');
+      const csvStop = get('soft_stop', 'softstop', 'stop_loss', 'soft_stop_loss');
+
+      return { ticker, side, qty: absShares, price, entry, mv,
+               fileBeta: fileBeta != null && fileBeta !== '' ? parseFloat(fileBeta) : null,
+               fileADV: fileADV != null && fileADV !== '' ? parseFloat(fileADV) : null,
+               csvStop, rawTicker };
+    }
+
+    // === MAIN PROCESSING ===
+    document.getElementById('csvFile').addEventListener('change', function (e) {
+      const file = e.target.files[0]; if (!file) return;
+      window._currentFileName = file.name;
+      const status = document.getElementById('status');
+      const summaryCard = document.getElementById('summaryCard');
+      summaryCard.style.display = 'none';
+      document.getElementById('reportSection').style.display = 'none';
+      status.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><span>Reading file &amp; fetching VIX...</span></div>';
+      loadVIX();
+
+      parseFile(file, async function (rows) {
+        if (!rows.length) { status.textContent = 'File is empty.'; return; }
+        const headers = rows[0].map(h => String(h));
+
+        const positions = [];
+        for (let i = 1; i < rows.length; i++) {
+          const pos = normaliseRow(headers, rows[i]);
+          if (pos) { pos.rowIdx = i; positions.push(pos); }
+        }
+        if (!positions.length) { status.textContent = 'No valid positions found. Check column names.'; return; }
+
+        const AUM = (parseFloat(document.getElementById('aumInput').value) || 25) * 1e6;
+        let longMV = 0, shortMV = 0; const positionDetails = [];
+        positions.forEach(p => {
+          if (p.side === 'long') { longMV += p.mv; positionDetails.push({ ticker: p.ticker, side: 'Long', qty: p.qty, price: p.price, mv: p.mv }); }
+          else { shortMV += p.mv; positionDetails.push({ ticker: p.ticker, side: 'Short', qty: p.qty, price: p.price, mv: p.mv }); }
+        });
+        const netExposure = ((longMV - shortMV) / AUM) * 100;
+        const longs = positionDetails.filter(p => p.side === 'Long'), shorts = positionDetails.filter(p => p.side === 'Short');
+        let largestLong = { ticker: '--', mv: 0 }, largestShort = { ticker: '--', mv: 0 };
+        longs.forEach(p => { if (p.mv > largestLong.mv) largestLong = p; });
+        shorts.forEach(p => { if (p.mv > largestShort.mv) largestShort = p; });
+        const largestLongPct = (largestLong.mv / AUM) * 100, largestShortPct = (largestShort.mv / AUM) * 100;
+
+        const tMinVal = parseFloat(document.getElementById('targetMin').value) || 20;
+        const tMaxVal = parseFloat(document.getElementById('targetMax').value) || 60;
+        // Stash metrics for the strip render in Phase 3 (illiquidPct computed there)
+        window._stripMetrics = { AUM, netExposure, targetMin: tMinVal, targetMax: tMaxVal, longMV, shortMV,
+          largestLong, largestShort, largestLongPct, largestShortPct };
+        let portfolioCtx = { netExposure, targetMin: tMinVal, targetMax: tMaxVal,
+          largestLong: { ticker: largestLong.ticker, pct: largestLongPct }, largestShort: { ticker: largestShort.ticker, pct: largestShortPct } };
+
+        window._exposureAudit = { displayValue: `${netExposure >= 0 ? '+' : ''}${netExposure.toFixed(2)}%`,
+          rawData: { AUM, longMV: longMV.toFixed(2), shortMV: shortMV.toFixed(2), netExposure: netExposure.toFixed(4) + '%',
+            largestLong: { ticker: largestLong.ticker, mv: largestLong.mv.toFixed(2), pctOfAUM: largestLongPct.toFixed(4) + '%', warning: largestLongPct > 10 ? 'EXCEEDS 10% LIMIT' : 'OK' },
+            largestShort: { ticker: largestShort.ticker, mv: largestShort.mv.toFixed(2), pctOfAUM: largestShortPct.toFixed(4) + '%', warning: largestShortPct > 4 ? 'EXCEEDS 4% LIMIT' : 'OK' },
+            positions: positionDetails }, fetchedAt: new Date().toISOString() };
+
+        // Build display table with standardised columns
+        const displayHeaders = ['Ticker', 'Recommendation', 'Side', 'Qty', 'Entry', 'Price', 'Soft Stop', 'Hard Stop', 'Beta', 'Short Interest', 'P/C Ratio', 'Liquidity', 'News', 'Sentiment'];
+        const displayRows = [displayHeaders];
+        positions.forEach(p => displayRows.push([p.ticker, '...', p.side, p.qty.toLocaleString(), p.entry.toFixed(2), p.price.toFixed(2), ...Array(8).fill('...')]));
+        renderTable(displayRows);
+
+        // === PHASE 1: Fetch enrichment data ===
+        status.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><span>Fetching market data for all positions...</span></div>';
+        const positionData = [];
+        for (let idx = 0; idx < positions.length; idx++) {
+          const p = positions[idx];
+          const i = idx + 1;
+          status.innerHTML = `<div class="spinner-wrap"><div class="spinner"></div><span>Fetching data: ${p.ticker} (${idx+1}/${positions.length})...</span></div>`;
+
+          let beta, analysts, sector, industry, analystTarget;
+          const overview = await fetchOverview(p.ticker, i);
+          if (p.fileBeta != null && !isNaN(p.fileBeta)) beta = p.fileBeta.toFixed(2);
+          else beta = overview.beta;
+          analysts = overview.analysts; sector = overview.sector; industry = overview.industry; analystTarget = overview.analystTarget;
+
+          const [newsData, sentData] = await Promise.all([
+            fetchNews(p.ticker, i), fetchSentiment(p.ticker, i)
+          ]);
+
+          const statsResult = await fetchStatistics(p.ticker, i);
+          const shortInt = statsResult.shortInterest;
+          const fetchedAdv = statsResult.adv;
+          const pcRatio = await fetchPutCallRatio(p.ticker, i);
+
+          // Use file ADV if available; convert USD to shares
+          let advShares = fetchedAdv;
+          if (p.fileADV != null && p.fileADV > 0 && p.price > 0) advShares = p.fileADV / p.price;
+
+          // VaR-based stops: hard = entry ± ($100k / qty), soft = entry ± ($70k / qty)
+          let hardStop = null, softStop = null;
+          if (p.entry > 0 && p.qty > 0) {
+            const hardLossPerShare = HARD_STOP_LOSS / p.qty;
+            const softLossPerShare = SOFT_STOP_LOSS / p.qty;
+            if (p.side === 'long') { hardStop = p.entry - hardLossPerShare; softStop = p.entry - softLossPerShare; }
+            else { hardStop = p.entry + hardLossPerShare; softStop = p.entry + softLossPerShare; }
+          }
+          const stop = p.csvStop ? p.csvStop : (softStop != null ? softStop.toFixed(2) : p.price);
+
+          const liquidityRatio = (advShares && advShares > 0) ? (p.qty / advShares) * 100 : null;
+          const isIlliquid = liquidityRatio != null && liquidityRatio > 3;
+
+          const scoreResult = calculateScore({
+            price: p.price, stop, side: p.side, shortInterest: shortInt, pcRatio, analysts, analystTarget,
+            beta, newsSummary: newsData.summary, liquidityRatio,
+            netExposure: portfolioCtx.netExposure, targetMin: portfolioCtx.targetMin, targetMax: portfolioCtx.targetMax,
+            isLargestLong: p.ticker === portfolioCtx.largestLong?.ticker, largestLongPct: portfolioCtx.largestLong?.pct || 0,
+            isLargestShort: p.ticker === portfolioCtx.largestShort?.ticker, largestShortPct: portfolioCtx.largestShort?.pct || 0
+          });
+
+          positionData.push({ ticker: p.ticker, side: p.side, qty: p.qty, price: p.price, entry: p.entry, stop, hardStop, softStop,
+            beta, analysts, analystTarget, sector, industry,
+            shortInt, pcRatio, adv: advShares, liquidityRatio, isIlliquid,
+            news: newsData, sentiment: sentData, scoreResult, rowIdx: i });
+        }
+
+        // === PHASE 2: Build batch prompt and call OpenAI once ===
+        status.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><span>Running AI portfolio analysis...</span></div>';
+
+        const vixVal = window._vixAudit?.value || 'N/A';
+        const savedSettings = getSettings() || {};
+        const sectors = Array.isArray(savedSettings.sectors) && savedSettings.sectors.length ? savedSettings.sectors.join(', ') : (typeof savedSettings.sectors === 'string' && savedSettings.sectors ? savedSettings.sectors : 'Not specified');
+        const geographies = Array.isArray(savedSettings.geographies) && savedSettings.geographies.length ? savedSettings.geographies.join(', ') : 'Not specified';
+        let batchInput = `=== PORTFOLIO CONTEXT ===\nAUM: $${(AUM/1e6).toFixed(0)}M\nNet Exposure: ${portfolioCtx.netExposure.toFixed(2)}% (target: ${portfolioCtx.targetMin}%-${portfolioCtx.targetMax}%)\nVIX (VIXY proxy): $${vixVal}\nLargest Long: ${portfolioCtx.largestLong?.ticker || 'N/A'} at ${(portfolioCtx.largestLong?.pct || 0).toFixed(2)}% of AUM\nLargest Short: ${portfolioCtx.largestShort?.ticker || 'N/A'} at ${(portfolioCtx.largestShort?.pct || 0).toFixed(2)}% of AUM\nInvestable sectors: ${sectors}\nInvestable geographies: ${geographies}\n\n=== POSITIONS ===\n`;
+
+        positionData.forEach(p => {
+          const hsStr = p.hardStop != null ? p.hardStop.toFixed(2) : 'N/A';
+          const ssStr = p.softStop != null ? p.softStop.toFixed(2) : 'N/A';
+          batchInput += `\n--- ${p.ticker} (${p.side}) ---\nEntry: ${p.entry} | Price: ${p.price} | Qty: ${p.qty}\nSoft Stop: ${ssStr} ($${SOFT_STOP_LOSS.toLocaleString()} loss) | Hard Stop: ${hsStr} ($${HARD_STOP_LOSS.toLocaleString()} loss)\nBeta: ${p.beta} | Short Interest: ${p.shortInt} | P/C Ratio: ${p.pcRatio} | Liquidity: ${p.liquidityRatio != null ? p.liquidityRatio.toFixed(2)+'% of ADV' : 'N/A'}${p.isIlliquid ? ' (ILLIQUID)' : ''}\nAnalysts: ${p.analysts}\nNews: ${p.news.summary}\nRetail Sentiment: ${p.sentiment.summary}\nDeterministic Score: ${p.scoreResult.totalScore} → ${p.scoreResult.recommendation}\n  Breakdown: ${p.scoreResult.breakdown.map(b => `${b.signal}: ${ptsLabel(b.points)}`).join(', ')}\n`;
+        });
+
+        let aiResult = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            if (attempt > 0) { status.innerHTML = `<div class="spinner-wrap"><div class="spinner"></div><span>Rate limited, retrying in 25s...</span></div>`; await sleep(25000); }
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+              body: JSON.stringify({ model: 'gpt-4o-mini', messages: [
+                { role: 'system', content: BATCH_PROMPT },
+                { role: 'user', content: batchInput }
+              ], temperature: 0 })
+            });
+            if (!res.ok) { const err = await res.json().catch(() => ({})); if (err.error?.message?.includes('Rate limit') && attempt < 2) continue; throw new Error(err.error?.message || `HTTP ${res.status}`); }
+            const data = await res.json();
+            const raw = data.choices[0].message.content.trim();
+            // Strip markdown fences if present
+            const jsonStr = raw.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+            aiResult = JSON.parse(jsonStr);
+            break;
+          } catch (err) {
+            if (attempt === 2) { status.textContent = 'AI analysis failed: ' + err.message; return; }
+          }
+        }
+
+        // Calculate illiquid AUM
+        let illiquidMV = 0;
+        const illiquidTickers = [];
+        positionData.forEach(p => {
+          if (p.isIlliquid) {
+            const mv = parseFloat(p.qty) * parseFloat(p.price) || 0;
+            illiquidMV += mv;
+            illiquidTickers.push(`${p.ticker} (${p.liquidityRatio.toFixed(1)}% of ADV)`);
+          }
+        });
+        const illiquidPct = (illiquidMV / AUM) * 100;
+        window._illiquidAudit = { pct: illiquidPct, tickers: illiquidTickers };
+
+        // === PHASE 3: Render summary section ===
+        const s = aiResult.summary;
+
+        // Sector breakdown — gross (all positions)
+        const sectorMV = {};
+        let totalMV = 0;
+        positionData.forEach(p => {
+          const mv = parseFloat(p.qty) * parseFloat(p.price) || 0;
+          const sec = p.sector || 'Unknown';
+          sectorMV[sec] = (sectorMV[sec] || 0) + mv;
+          totalMV += mv;
+        });
+        const sectorBreakdown = Object.entries(sectorMV)
+          .map(([sector, mv]) => ({ sector, mv, pct: totalMV > 0 ? (mv / totalMV * 100) : 0 }))
+          .sort((a, b) => b.pct - a.pct);
+
+        // Counts for the filter pills (rendered above the positions table)
+        const aiMap = {};
+        (aiResult.positions || []).forEach(p => { aiMap[p.ticker?.toUpperCase()] = p; });
+        const counts = { ALL: positionData.length, EXIT: 0, REDUCE: 0, HOLD: 0 };
+        positionData.forEach(p => {
+          const r = aiMap[p.ticker.toUpperCase()]?.recommendation || p.scoreResult.recommendation;
+          if (counts[r] != null) counts[r]++;
+        });
+
+        // Render condensed metrics strip
+        renderMetricsStrip({ ...window._stripMetrics, illiquidPct });
+
+        // Render filter pills above the positions table (interactive)
+        const filterBar = document.getElementById('filterBarPositions');
+        filterBar.innerHTML = `
+          <button class="filter-pill-lg all active" data-filter="ALL"><span class="pill-count">${counts.ALL}</span>All</button>
+          <button class="filter-pill-lg exit" data-filter="EXIT"><span class="pill-count">${counts.EXIT}</span>Exit</button>
+          <button class="filter-pill-lg reduce" data-filter="REDUCE"><span class="pill-count">${counts.REDUCE}</span>Reduce</button>
+          <button class="filter-pill-lg hold" data-filter="HOLD"><span class="pill-count">${counts.HOLD}</span>Hold</button>`;
+
+        // Render hero verdict counts (display only, top of Overview)
+        const verdictHero = document.getElementById('verdictHero');
+        verdictHero.innerHTML = `
+          <div class="verdict-hero-card exit">
+            <div class="verdict-hero-count">${counts.EXIT}</div>
+            <div class="verdict-hero-label">Exit</div>
+          </div>
+          <div class="verdict-hero-card reduce">
+            <div class="verdict-hero-count">${counts.REDUCE}</div>
+            <div class="verdict-hero-label">Reduce</div>
+          </div>
+          <div class="verdict-hero-card hold">
+            <div class="verdict-hero-count">${counts.HOLD}</div>
+            <div class="verdict-hero-label">Hold</div>
+          </div>`;
+
+        // Render single action list (replaces 2x2 grid). Defends against AI returning empty fields.
+        const actions = Array.isArray(s?.recommended_actions) ? s.recommended_actions.filter(a => a && String(a).trim()) : [];
+        const actionsHTML = actions.length
+          ? actions.map(a => {
+              const al = a.toLowerCase();
+              let cls = 'action-hold', icon = '&#9679;';
+              if (al.includes('exit') || al.includes('close') || al.includes('sell')) { cls = 'action-exit'; icon = '&#10060;'; }
+              else if (al.includes('reduce') || al.includes('trim') || al.includes('cut') || al.includes('decrease')) { cls = 'action-reduce'; icon = '&#9888;'; }
+              return `<div class="action-item ${cls}"><span class="action-icon">${icon}</span><span>${escapeHTML(a)}</span></div>`;
+            }).join('')
+          : '<p style="color:var(--text-muted); font-size:13px;">No specific actions recommended at this time.</p>';
+        summaryCard.innerHTML = `
+          <div class="action-list">
+            <h3 class="subsection-title">Recommended Actions</h3>
+            ${actionsHTML}
+            <div class="feedback-bar portfolio" data-feedback-id="portfolio-summary">
+              <span class="feedback-prompt">Was this analysis useful?</span>
+              <button class="thumb-btn up" data-rating="up" title="Useful">&#128077;</button>
+              <button class="thumb-btn down" data-rating="down" title="Not useful">&#128078;</button>
+            </div>
+            <div class="feedback-comment" data-feedback-id="portfolio-summary">
+              <textarea placeholder="What was off about this analysis?"></textarea>
+              <button class="submit-feedback">Submit</button>
+            </div>
+            <div class="feedback-thanks" data-feedback-id="portfolio-summary">Thanks &mdash; logged.</div>
+          </div>`;
+        summaryCard.style.display = 'block';
+
+        // Render Sector Breakdown into the Positions tab (compact)
+        const topN = 5;
+        const topSectors = sectorBreakdown.slice(0, topN);
+        const otherPct = sectorBreakdown.slice(topN).reduce((sum, b) => sum + b.pct, 0);
+        if (otherPct > 0) topSectors.push({ sector: 'Other', pct: otherPct });
+        const sectorRowsHTML = topSectors.map(b => {
+          // Neutral grey bars across the board (per color discipline pass)
+          return `<div class="sector-row">
+            <span class="sr-name">${escapeHTML(b.sector)}</span>
+            <span class="sr-pct">${b.pct.toFixed(1)}%</span>
+            <div class="sr-bar-wrap"><div class="sr-bar" style="width:${Math.min(b.pct,100)}%; background:var(--border-strong);"></div></div>
+          </div>`;
+        }).join('');
+        document.getElementById('sectorBreakdownCompact').innerHTML = `
+          <h3 class="subsection-title">Sector Breakdown</h3>
+          <div class="sector-rows">${sectorRowsHTML}</div>
+          ${s?.sector_exposure ? `<p style="margin-top:var(--s-2); font-size:12px; color:var(--text-muted); line-height:1.4;">${escapeHTML(s.sector_exposure)}</p>` : ''}`;
+
+        // === PHASE 4: Render results table ===
+        // (aiMap already built above for verdict pill counts)
+        renderTable(displayRows);
+
+        positionData.forEach((p, idx) => {
+          const i = idx + 1;
+          // New column order: Ticker(0), Recommendation(1), Side(2), Qty(3), Entry(4), Price(5),
+          // Soft Stop(6), Hard Stop(7), Beta(8), Short Int(9), P/C(10), Liquidity(11), News(12), Sentiment(13)
+          const recCol = 1, ssCol = 6, hsCol = 7, betaCol = 8, shortCol = 9, pcCol = 10, liqCol = 11, newsCol = 12, sentCol = 13;
+
+          // Stops
+          const rowEl = document.querySelector('#tableWrap table')?.rows[i];
+          if (rowEl) {
+            while (rowEl.cells.length <= hsCol) rowEl.insertCell();
+            rowEl.cells[ssCol].textContent = p.softStop != null ? '$' + p.softStop.toFixed(2) : 'N/A';
+            rowEl.cells[hsCol].textContent = p.hardStop != null ? '$' + p.hardStop.toFixed(2) : 'N/A';
+            rowEl.cells[hsCol].className = 'col-hardstop';
+            const priceNum = parseFloat(p.price) || 0;
+            if (p.softStop != null && p.side === 'long' && priceNum <= p.softStop) rowEl.cells[ssCol].style.color = 'var(--signal-down)';
+            if (p.hardStop != null && p.side === 'long' && priceNum <= p.hardStop) rowEl.cells[hsCol].style.color = 'var(--signal-down)';
+            if (p.softStop != null && p.side === 'short' && priceNum >= p.softStop) rowEl.cells[ssCol].style.color = 'var(--signal-down)';
+            if (p.hardStop != null && p.side === 'short' && priceNum >= p.hardStop) rowEl.cells[hsCol].style.color = 'var(--signal-down)';
+          }
+
+          // Fill enrichment cells (data only — no per-cell audit buttons)
+          setCellWithAudit(i, betaCol, p.beta, 'Beta');
+          setCellWithAudit(i, shortCol, p.shortInt, 'Short Interest');
+          setCellWithAudit(i, pcCol, p.pcRatio, 'P/C Ratio');
+
+          // Liquidity cell
+          let liqText = 'N/A', liqStyle = '';
+          if (p.liquidityRatio != null) {
+            liqText = `${p.liquidityRatio.toFixed(2)}%`;
+            if (p.isIlliquid) { liqText += ' ILLIQUID'; liqStyle = 'color:var(--signal-down); font-weight:600;'; }
+          }
+          if (rowEl) { while (rowEl.cells.length <= liqCol) rowEl.insertCell(); rowEl.cells[liqCol].innerHTML = `<span style="${liqStyle}">${liqText}</span>`; rowEl.cells[liqCol].style.whiteSpace = 'pre-line'; }
+
+          // Determine final recommendation FIRST so news highlighting can react to it
+          const sc = p.scoreResult;
+          const aiPos = aiMap[p.ticker.toUpperCase()] || { recommendation: sc.recommendation, reasons: [`Based on deterministic score of ${sc.totalScore}`], confidence: 'Medium' };
+          const finalRec = aiPos.recommendation || sc.recommendation || 'HOLD';
+
+          // News cell — contrarian highlight: bold red [BEARISH] on HOLD, bold green [BULLISH] on REDUCE/EXIT
+          const newsLinks = p.news.articles?.length ? p.news.articles.map((a,j) => `<a class="footnote-link" href="${a.link}" target="_blank" rel="noopener">[${j+1}]</a>`).join('') : '';
+          let newsBody = escapeHTML(p.news.summary || '');
+          if (finalRec === 'HOLD' && newsBody.includes('[BEARISH]')) {
+            newsBody = newsBody.replace('[BEARISH]', '<strong style="color:var(--signal-down);">[BEARISH]</strong>');
+          } else if ((finalRec === 'REDUCE' || finalRec === 'EXIT') && newsBody.includes('[BULLISH]')) {
+            newsBody = newsBody.replace('[BULLISH]', '<strong style="color:var(--signal-up);">[BULLISH]</strong>');
+          }
+          setCellHTMLWithAudit(i, newsCol, newsBody + newsLinks, 'News');
+
+          // Sentiment cell
+          const retailLinks = p.sentiment.posts?.length ? p.sentiment.posts.slice(0,5).map((pt,j) => `<a class="footnote-link" href="${pt.link}" target="_blank" rel="noopener" title="${pt.label}">[${j+1}]</a>`).join('') : '';
+          setCellHTMLWithAudit(i, sentCol, `<b>Analyst:</b> ${escapeHTML(p.analysts || 'N/A')}<br><b>Retail:</b> ${escapeHTML(p.sentiment.summary || '')}${retailLinks}`, 'Sentiment');
+          let reasonList = Array.isArray(aiPos.reasons) ? aiPos.reasons.filter(r => r && String(r).trim()) : (aiPos.reason ? [aiPos.reason] : []);
+          if (!reasonList.length) reasonList = [`Based on deterministic score of ${sc.totalScore}`];
+          const reasonsHTML = `<ul style="margin:6px 0 0 0; padding-left:18px;">${reasonList.map(r => `<li style="font-size:12px; line-height:1.4; margin-bottom:4px;">${escapeHTML(r)}</li>`).join('')}</ul>`;
+          let pillBg = 'var(--signal-up)', pillFg = '#fff';
+          if (finalRec === 'EXIT') { pillBg = 'var(--signal-down)'; }
+          else if (finalRec === 'REDUCE') { pillBg = 'var(--signal-warn)'; pillFg = '#1a1a1a'; }
+          const recPill = `<span style="display:inline-block;padding:3px 10px;background:${pillBg};color:${pillFg};font-size:11px;font-weight:700;letter-spacing:0.06em;border-radius:2px;">${finalRec}</span>`;
+          const conf = (aiPos.confidence || 'Medium').toLowerCase();
+          const confPill = `<span class="confidence-pill ${conf}">Conf: ${aiPos.confidence || 'Medium'}</span>`;
+          // Single info button (ℹ) opens the unified Position Detail modal for this row
+          const infoBtn = `<button class="row-info-btn" title="Position detail" onclick="showPositionDetail(${i}, '${p.ticker.replace(/'/g,'\\\'')}')">&#8505;</button>`;
+          // Feedback bar (thumbs up/down) per position
+          const fbId = `pos-${p.ticker}`;
+          const feedbackHTML = `
+            <div class="feedback-bar" data-feedback-id="${fbId}">
+              <button class="thumb-btn up" data-rating="up" title="This recommendation looks right">&#128077;</button>
+              <button class="thumb-btn down" data-rating="down" title="Something looks off">&#128078;</button>
+            </div>
+            <div class="feedback-comment" data-feedback-id="${fbId}">
+              <textarea placeholder="What's not right?"></textarea>
+              <button class="submit-feedback">Submit</button>
+            </div>
+            <div class="feedback-thanks" data-feedback-id="${fbId}">Thanks &mdash; logged.</div>`;
+          const recHTML = `<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:6px;"><div>${recPill}<br>${confPill}</div>${infoBtn}</div>${reasonsHTML}${feedbackHTML}`;
+
+          // Store audit for the recommendation
+          storeAudit(i, 'AI Recommendation', {
+            label: `AI Recommendation — ${p.ticker}`, finalRecommendation: finalRec,
+            deterministicScore: sc.totalScore, deterministicRec: sc.recommendation,
+            scoreBreakdown: sc.breakdown,
+            llmAgreed: finalRec === sc.recommendation, llmVerdict: finalRec === sc.recommendation ? 'AGREE' : 'ADJUST',
+            llmFinal: finalRec, llmReason: reasonList.join(' | ')
+          });
+
+          setCellHTMLWithAudit(i, recCol, recHTML, 'AI Recommendation');
+
+          // Color-code row
+          const tbl = document.querySelector('#tableWrap table');
+          if (tbl?.rows[i]) {
+            const row = tbl.rows[i];
+            // Use a left-edge accent on the first cell (Ticker) instead of full-row tint
+            row.style.background = '';
+            row.dataset.recommendation = finalRec;
+            if (finalRec === 'EXIT') { row.cells[0].style.boxShadow = 'inset 4px 0 0 #EF5350'; row.style.background = 'rgba(239, 83, 80, 0.22)'; }
+            else if (finalRec === 'REDUCE') { row.cells[0].style.boxShadow = 'inset 4px 0 0 #FFB74D'; row.style.background = 'rgba(255, 183, 77, 0.20)'; }
+            else { row.cells[0].style.boxShadow = 'inset 4px 0 0 #26A69A'; row.style.background = 'rgba(38, 166, 154, 0.20)'; }
+          }
+        });
+
+        document.getElementById('reportSection').style.display = 'block';
+        updateReportHeaderFile(window._currentFileName, positions.length);
+        status.textContent = '';
+      });
+    });
+
+    // Filter pill click handlers (delegated — pills are re-rendered each analysis)
+    document.addEventListener('click', function (e) {
+      const pill = e.target.closest('.filter-pill-lg');
+      if (!pill) return;
+      const filter = pill.dataset.filter;
+      document.querySelectorAll('.filter-pill-lg').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      const tbl = document.querySelector('#tableWrap table');
+      if (!tbl) return;
+      for (let i = 1; i < tbl.rows.length; i++) {
+        const rec = tbl.rows[i].dataset.recommendation;
+        tbl.rows[i].style.display = (filter === 'ALL' || rec === filter) ? '' : 'none';
+      }
+    });
+
+    // Show-all-columns toggle (Hard Stop hidden by default)
+    document.addEventListener('change', function (e) {
+      if (e.target?.id !== 'showAllCols') return;
+      const wrap = document.getElementById('tableWrap');
+      if (!wrap) return;
+      if (e.target.checked) wrap.classList.remove('hide-extras');
+      else wrap.classList.add('hide-extras');
+    });
+
+    // === Feedback (thumbs up/down) ===
+    function saveFeedback(id, rating, comment) {
+      const isPosition = id.startsWith('pos-');
+      const ticker = isPosition ? id.substring(4) : null;
+      const fileName = window._currentFileName || 'unknown';
+      const runId = `${fileName}-${new Date().toISOString().slice(0,10)}`;
+      let recommendation = null;
+      if (isPosition) {
+        // Try to capture the displayed recommendation for this row
+        const tbl = document.querySelector('#tableWrap table');
+        if (tbl) {
+          for (let r = 1; r < tbl.rows.length; r++) {
+            const tickerCell = tbl.rows[r].cells[0]?.textContent?.trim();
+            if (tickerCell === ticker) { recommendation = tbl.rows[r].dataset.recommendation || null; break; }
+          }
+        }
+      }
+      const item = { id, type: isPosition ? 'position' : 'portfolio', ticker, recommendation, rating, comment: comment || '', runId, fileName, timestamp: new Date().toISOString() };
+      const log = JSON.parse(localStorage.getItem('riskAnalyzerFeedback') || '[]');
+      log.push(item);
+      localStorage.setItem('riskAnalyzerFeedback', JSON.stringify(log));
+    }
+
+    function showFeedbackThanks(id) {
+      const el = document.querySelector(`.feedback-thanks[data-feedback-id="${id}"]`);
+      if (el) {
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 2500);
+      }
+    }
+
+    document.addEventListener('click', function (e) {
+      // Thumb click
+      const thumb = e.target.closest('.thumb-btn');
+      if (thumb) {
+        const bar = thumb.closest('.feedback-bar');
+        if (!bar) return;
+        const fbId = bar.dataset.feedbackId;
+        const rating = thumb.dataset.rating;
+        // Visual: highlight the chosen thumb, clear the other
+        bar.querySelectorAll('.thumb-btn').forEach(b => b.classList.remove('active'));
+        thumb.classList.add('active');
+        const commentEl = document.querySelector(`.feedback-comment[data-feedback-id="${fbId}"]`);
+        if (rating === 'up') {
+          saveFeedback(fbId, 'up', '');
+          if (commentEl) commentEl.style.display = 'none';
+          showFeedbackThanks(fbId);
+        } else {
+          // Show comment area for thumbs-down
+          if (commentEl) {
+            commentEl.style.display = 'block';
+            commentEl.querySelector('textarea')?.focus();
+          }
+        }
+        return;
+      }
+      // Submit comment for thumbs-down
+      const submit = e.target.closest('.submit-feedback');
+      if (submit) {
+        const commentEl = submit.closest('.feedback-comment');
+        const fbId = commentEl.dataset.feedbackId;
+        const text = commentEl.querySelector('textarea')?.value?.trim() || '';
+        saveFeedback(fbId, 'down', text);
+        commentEl.style.display = 'none';
+        showFeedbackThanks(fbId);
+        return;
+      }
+      // Export feedback log
+      if (e.target?.id === 'feedbackExportLink') {
+        e.preventDefault();
+        const log = JSON.parse(localStorage.getItem('riskAnalyzerFeedback') || '[]');
+        if (!log.length) { alert('No feedback recorded yet. Click 👍 or 👎 on a recommendation first.'); return; }
+        const blob = new Blob([JSON.stringify(log, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `risk-agent-feedback-${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    });
+    // Default state: hide extras
+    (function initHideExtras() {
+      const wrap = document.getElementById('tableWrap');
+      if (wrap) wrap.classList.add('hide-extras');
+    })();
+  </script>
+</body>
+</html>
